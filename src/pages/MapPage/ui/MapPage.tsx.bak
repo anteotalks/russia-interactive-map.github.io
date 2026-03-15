@@ -1,13 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import type { FeatureCollection } from 'geojson';
-import { fetchRegionsFromGeoJSON } from '../../../entities/region';
-import { DEFAULT_REGION_CONFIG, RegionLayerConfig } from '../../../entities/region/lib/types';
-import { useRegionLayer } from '../../../shared/lib/hooks/useRegionLayer';
 import { MapWidget, TerrainMode } from '../../../widgets/Map/ui/MapWidget';
 import { ControlPanel, DynamicsPeriod, YearType, VisualizationMode, FilterDirection, TerrainMode as PanelTerrainMode } from '../../../widgets/ControlPanel/ui/ControlPanel';
 import { fetchLocationsFromCSV } from '../../../entities/location/api/locationApi';
 import type { Location } from '../../../entities/location/lib/types';
-import { useMapLayers } from '../../../shared/lib/hooks/useMapLayers';
+import { useMapLayers } from '../lib/useMapLayers';
 import type { PickingInfo } from '@deck.gl/core';
 import { useAltKeyPress } from '../../../shared/lib/hooks';
 import { useMapLayersControl } from '../../../shared/lib/hooks/useMapLayersControl';
@@ -70,10 +66,6 @@ export const MapPage: React.FC = () => {
   const [dynamicsMin, setDynamicsMin] = useState(-100);
   const [dynamicsMax, setDynamicsMax] = useState(100);
   const [terrainMode, setTerrainMode] = useState<TerrainMode>('hillshade');
-  
-  // Состояния для границ регионов
-  const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
-  const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
 
   const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
@@ -93,20 +85,10 @@ export const MapPage: React.FC = () => {
     loadData();
   }, []);
 
-  // Загрузка границ регионов
-  useEffect(() => {
-    fetchRegionsFromGeoJSON('/ruregs1.geojson')
-      .then(setRegionsData)
-      .catch(err => console.warn('Не удалось загрузить границы регионов:', err));
-  }, []);
-
   const handleMapViewStateChange = useCallback((newViewState: any) => handleViewStateChange(newViewState), [handleViewStateChange]);
   const handleCameraChange = useCallback((key: keyof typeof cameraSettings, value: number) => { updateCameraSetting(key, value); updateViewState({ [key]: value }); }, [updateCameraSetting, updateViewState]);
   useAltKeyPress(() => setIsPanelVisible(prev => !prev));
   const handleFilterChange = useCallback((newFilter: Partial<FilterSettings>) => setFilterSettings(prev => ({ ...prev, ...newFilter })), []);
-  const handleRegionConfigChange = useCallback((newConfig: Partial<RegionLayerConfig>) => {
-    setRegionConfig(prev => ({ ...prev, ...newConfig }));
-  }, []);
   const handleTerrainModeChange = useCallback((mode: TerrainMode) => setTerrainMode(mode), []);
 
   const stableLocations = useMemo(() => locations, [locations]);
@@ -131,16 +113,6 @@ export const MapPage: React.FC = () => {
 
   const deckLayers = useMapLayers(stableLocations, layerSettings, palette);
 
-  const regionLayer = useRegionLayer(regionsData, regionConfig);
-
-  // Объединяем слои: границы должны быть под точками, поэтому сначала regionLayer, потом точки
-  const allLayers = useMemo(() => {
-    const layers = [];
-    if (regionConfig.visible && regionLayer) layers.push(regionLayer);
-    if (deckLayers.length > 0) layers.push(...deckLayers);
-    return layers;
-  }, [regionConfig.visible, regionLayer, deckLayers]);
-
   const handleSettingsChange = useCallback((newSettings: Partial<VisualizationSettings>) => setSettings(prev => ({ ...prev, ...newSettings })), []);
   const handleModeChange = useCallback((newMode: VisualizationMode) => setMode(newMode), []);
   const handleDynamicsModeChange = useCallback((mode: DynamicsPeriod) => { if (mode === '2010-2021' || mode === '2002-2021') setDynamicsMode(mode); }, []);
@@ -152,10 +124,7 @@ export const MapPage: React.FC = () => {
   const getTooltip = useCallback(({ object }: PickingInfo) => {
     if (!object) return null;
     const location = object as Location;
-    return {
-      html: `<div><strong>${location.populated_place}</strong><br/>Регион: ${location.region}<br/>Население (2002): ${location.population_2002.toLocaleString()}<br/>Население (2010): ${location.population_2010.toLocaleString()}<br/>Население (2021): ${location.population_2021.toLocaleString()}</div>`,
-      style: { backgroundColor: '#111', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px' }
-    };
+    return { html: `<div><strong>${location.populated_place}</strong><br/>Регион: ${location.region}<br/>Население (2002): ${location.population_2002.toLocaleString()}<br/>Население (2010): ${location.population_2010.toLocaleString()}<br/>Население (2021): ${location.population_2021.toLocaleString()}</div>`, style: { backgroundColor: '#111', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px' } };
   }, []);
 
   if (isLoading) {
@@ -200,8 +169,6 @@ export const MapPage: React.FC = () => {
         populationMax={populationMax}
         dynamicsMin={dynamicsMin}
         dynamicsMax={dynamicsMax}
-        regionConfig={regionConfig}
-        onRegionConfigChange={handleRegionConfigChange}
         terrainMode={terrainMode}
         onTerrainModeChange={handleTerrainModeChange}
       />
@@ -209,7 +176,7 @@ export const MapPage: React.FC = () => {
         ref={mapRef}
         baseLayer={baseLayer}
         terrainMode={terrainMode}
-        layers={allLayers}
+        layers={deckLayers}
         getTooltip={getTooltip}
         viewState={viewState}
         onViewStateChange={handleMapViewStateChange}

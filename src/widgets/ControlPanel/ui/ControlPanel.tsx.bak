@@ -31,7 +31,6 @@ import { GradientConfig } from '../../../entities/palette/lib/types';
 import { CameraSettings } from '../../../shared/types/camera';
 import { LayerConfig } from '../../../shared/lib/hooks/useMapLayersControl';
 import { FilterSettings } from '../../../shared/types/visualization';
-import { RegionLayerConfig } from '../../../entities/region/lib/types';
 
 export type YearType = '2002' | '2010' | '2021';
 export type VisualizationMode = 'dynamics' | 'absolute';
@@ -85,8 +84,6 @@ interface ControlPanelProps {
   populationMax: number;
   dynamicsMin: number;
   dynamicsMax: number;
-  regionConfig: RegionLayerConfig;
-  onRegionConfigChange: (newConfig: Partial<RegionLayerConfig>) => void;
   terrainMode: TerrainMode;
   onTerrainModeChange: (mode: TerrainMode) => void;
 }
@@ -101,7 +98,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
     cameraSettings, onCameraChange, onCameraReset, onCameraSync, isCameraSynced,
     isVisible, onVisibilityChange, filterSettings, onFilterChange,
     populationMin, populationMax, dynamicsMin, dynamicsMax,
-    regionConfig, onRegionConfigChange,
     terrainMode, onTerrainModeChange
   } = props;
 
@@ -131,8 +127,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
   const handleDrag = useCallback((_e: DraggableEvent, data: DraggableData) => setPosition({ x: data.x, y: data.y }), []);
   const handleStop = useCallback((_e: DraggableEvent, data: DraggableData) => setPosition({ x: data.x, y: data.y }), []);
 
-  const handleRegionVisibleChange = (e: React.ChangeEvent<HTMLInputElement>) => 
-    onRegionConfigChange({ visible: e.target.checked });
   const handleYearChange = (event: SelectChangeEvent) => onSettingsChange({ selectedYear: event.target.value as YearType });
   const handleDynamicsModeChange = (event: React.ChangeEvent<HTMLInputElement>) => onDynamicsModeChange(event.target.value as DynamicsPeriod);
   const handleModeChange = (event: React.ChangeEvent<HTMLInputElement>) => onModeChange(event.target.value as VisualizationMode);
@@ -268,39 +262,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                   <FormControlLabel key={layer.id} control={<Switch size="small" checked={layer.visible} onChange={() => onToggleLayer(layer.id)} color="primary" />} label={<Box sx={{ display: 'flex', alignItems: 'center' }}>{layer.name}<Tooltip title={layer.visible ? "Видимый" : "Скрыт"}><IconButton size="small" sx={{ ml: 0.5 }}>{layer.visible ? <VisibilityIcon fontSize="small" color="action" /> : <VisibilityOffIcon fontSize="small" color="disabled" />}</IconButton></Tooltip></Box>} />
                 ))}
               </FormGroup>
-              <Divider sx={{ my: 1 }} />
-              
-              {/* Секция границ регионов */}
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="subtitle2" color="primary" gutterBottom>Границы регионов</Typography>
-                <FormControlLabel
-                  control={<Switch size="small" checked={regionConfig.visible} onChange={handleRegionVisibleChange} />}
-                  label="Показать границы"
-                />
-                <Box sx={{ pl: 2, mt: 1 }}>
-                  <Typography variant="caption" display="block" gutterBottom>Цвет линий</Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                    <Box sx={{ width: 30, height: 30, borderRadius: 1, bgcolor: regionConfig.color, border: '1px solid #ccc' }} />
-                    <Button size="small" onClick={(e) => setColorPickerAnchor(e.currentTarget)}>Выбрать</Button>
-                  </Box>
-                  <SliderWithInput
-                    label="Толщина (px)"
-                    value={regionConfig.width}
-                    onChange={(val) => onRegionConfigChange({ width: val })}
-                    min={0.5} max={5} step={0.1} unit="px"
-                  />
-                  <SliderWithInput
-                    label="Прозрачность"
-                    value={regionConfig.opacity}
-                    onChange={(val) => onRegionConfigChange({ opacity: val })}
-                    min={0} max={1} step={0.01}
-                  />
-                </Box>
-                <Popover open={Boolean(colorPickerAnchor)} anchorEl={colorPickerAnchor} onClose={() => setColorPickerAnchor(null)}>
-                  <HexColorPicker color={regionConfig.color} onChange={(c) => onRegionConfigChange({ color: c })} />
-                </Popover>
-              </Box>
-
               <Divider sx={{ my: 1 }} />
               <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle2" color="primary" gutterBottom>Режим рельефа</Typography>
