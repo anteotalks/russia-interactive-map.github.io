@@ -1,6 +1,6 @@
 /**
- * Хук для создания слоя границ регионов с правильной реактивностью
- * и отключённой подсветкой при наведении
+ * Хук для слоя границ регионов с защитой от повторной инициализации
+ * и корректной обработкой видимости.
  */
 
 import { useMemo } from 'react';
@@ -14,38 +14,42 @@ export const useRegionLayer = (
   config: RegionLayerConfig
 ): GeoJsonLayer | null => {
   return useMemo(() => {
-    if (!regionsData) return null;
+    // Если данных нет или они пустые – не создаём слой
+    if (!regionsData || !regionsData.features || regionsData.features.length === 0) {
+      return null;
+    }
 
-    // Преобразуем HEX в RGB для deck.gl
+    // Проверяем, что конфигурация валидна
+    if (!config) return null;
+
     const lineColorRgb = hexToRgb(config.color);
 
+    // Создаём слой с явным указанием id
     return new GeoJsonLayer({
       id: 'regions-layer',
       data: regionsData,
-
-      // Основные параметры отрисовки
-      stroked: true,              // Рисуем только линии
-      filled: false,              // Без заливки
-      getLineColor: lineColorRgb, // Цвет линий из конфига
-      getLineWidth: config.width, // Толщина линий
-      lineWidthUnits: 'pixels',   // Толщина в пикселях (не зависит от зума)
-      opacity: config.opacity,    // Прозрачность слоя
-
-      // ОТКЛЮЧАЕМ ВСЮ ПОДСВЕТКУ
-      pickable: false,            // Не реагируем на hover/click
-      autoHighlight: false,       // Отключаем автоматическую подсветку
-      highlightColor: [0, 0, 0, 0], // Прозрачный цвет на всякий случай
-
-      // ПРАВИЛЬНАЯ РЕАКТИВНОСТЬ: слой перерисовывается при изменении этих параметров
+      stroked: true,
+      filled: false,
+      getLineColor: lineColorRgb,
+      getLineWidth: config.width,
+      lineWidthUnits: 'pixels',
+      opacity: config.opacity,
+      // Видимость управляется напрямую, без updateTriggers
+      visible: config.visible,
+      pickable: false,          // для кликов пока не нужно
+      autoHighlight: false,
+      highlightColor: [0, 0, 0, 0],
+      // updateTriggers только для тех пропсов, которые могут меняться без пересоздания слоя
       updateTriggers: {
         getLineColor: [config.color],
         getLineWidth: [config.width],
         opacity: [config.opacity],
+        // visible не включаем – он управляется напрямую
       },
-
-      // Дополнительные ограничения для чётких линий
       lineWidthMinPixels: 0.5,
       lineWidthMaxPixels: 10,
     });
-  }, [regionsData, config.color, config.width, config.opacity]);
+  }, [regionsData, config.visible, config.color, config.width, config.opacity]);
+  // Зависимость от visible добавлена, чтобы слой пересоздавался при его изменении
+  // (так надёжнее, чем полагаться на внутренний механизм deck.gl)
 };

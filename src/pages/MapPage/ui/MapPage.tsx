@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { FeatureCollection } from 'geojson';
 import { fetchRegionsFromGeoJSON } from '../../../entities/region';
 import { DEFAULT_REGION_CONFIG, RegionLayerConfig } from '../../../entities/region/lib/types';
@@ -70,8 +70,7 @@ export const MapPage: React.FC = () => {
   const [dynamicsMin, setDynamicsMin] = useState(-100);
   const [dynamicsMax, setDynamicsMax] = useState(100);
   const [terrainMode, setTerrainMode] = useState<TerrainMode>('hillshade');
-  
-  // Состояния для границ регионов
+
   const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
   const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
 
@@ -79,25 +78,75 @@ export const MapPage: React.FC = () => {
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
   const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
 
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      try {
-        const data = await fetchLocationsFromCSV('/data_seva_updated1.csv');
-        setLocations(data);
-        setPopulationMax(getPopulationExtents(data)[1]);
-        const dynExt = getDynamicsExtents(data);
-        setDynamicsMin(dynExt[0]); setDynamicsMax(dynExt[1]);
-      } catch (error) { console.error('Failed to load locations:', error); } finally { setIsLoading(false); }
-    };
-    loadData();
-  }, []);
+  // Счётчик активных запросов – гарантирует сброс isLoading только после последнего
+  const activeRequests = useRef(0);
 
-  // Загрузка границ регионов
+  // Загрузка локаций – локальный флаг ignore вместо внешнего isMounted
   useEffect(() => {
-    fetchRegionsFromGeoJSON('/ruregs1.geojson')
-      .then(setRegionsData)
-      .catch(err => console.warn('Не удалось загрузить границы регионов:', err));
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]); // таймаут 30с
+    let ignore = false;
+
+    activeRequests.current += 1;
+    setIsLoading(true);
+
+    const load = async () => {
+      try {
+        const data = await fetchLocationsFromCSV('/data_seva_updated1.csv', signal);
+        if (!ignore) {
+          setLocations(data);
+          setPopulationMax(getPopulationExtents(data)[1]);
+          const dynExt = getDynamicsExtents(data);
+          setDynamicsMin(dynExt[0]);
+          setDynamicsMax(dynExt[1]);
+        }
+      } catch (error) {
+        if (!ignore && error instanceof Error && error.name !== 'AbortError') {
+          console.error('❌ Ошибка загрузки локаций:', error);
+          setLocations(null);
+        }
+      } finally {
+        activeRequests.current -= 1;
+        // Сбрасываем isLoading только если нет активных запросов
+        if (activeRequests.current === 0) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, []); // пустой массив – эффект только при монтировании
+
+  // Загрузка границ регионов – аналогичный паттерн
+  useEffect(() => {
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
+    let ignore = false;
+
+    const load = async () => {
+      try {
+        const data = await fetchRegionsFromGeoJSON('/ruregs1.geojson', signal);
+        if (!ignore) {
+          setRegionsData(data);
+        }
+      } catch (error) {
+        if (!ignore && error instanceof Error && error.name !== 'AbortError') {
+          console.warn('⚠️ Не удалось загрузить границы регионов:', error);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
   }, []);
 
   const handleMapViewStateChange = useCallback((newViewState: any) => handleViewStateChange(newViewState), [handleViewStateChange]);
@@ -130,10 +179,8 @@ export const MapPage: React.FC = () => {
   }), [settings, mode, dynamicsMode, absolutePeriod, filterSettings]);
 
   const deckLayers = useMapLayers(stableLocations, layerSettings, palette);
-
   const regionLayer = useRegionLayer(regionsData, regionConfig);
 
-  // Объединяем слои: границы должны быть под точками, поэтому сначала regionLayer, потом точки
   const allLayers = useMemo(() => {
     const layers = [];
     if (regionConfig.visible && regionLayer) layers.push(regionLayer);
@@ -159,7 +206,27 @@ export const MapPage: React.FC = () => {
   }, []);
 
   if (isLoading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw', position: 'fixed', top: 0, left: 0, backgroundColor: '#fff', zIndex: 2000 }}>Загрузка данных...</div>;
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        width: '100vw',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        backgroundColor: '#fff',
+        zIndex: 2000,
+        fontFamily: 'sans-serif'
+      }}>
+        <div>Загрузка данных...</div>
+        <div style={{ marginTop: '1rem', color: '#666', fontSize: '0.9rem' }}>
+          Если загрузка затянулась, проверьте консоль (F12) на наличие ошибок.
+        </div>
+      </div>
+    );
   }
 
   return (
