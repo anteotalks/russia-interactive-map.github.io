@@ -165,7 +165,6 @@ export const useMapLayers = (
       lineWidthMinPixels: settings.strokeWidth > 0 ? 0.5 : 0,
       lineWidthMaxPixels: 10,
       radiusMinPixels: settings.minRadius,
-      radiusMaxPixels: 300,
       extensions: [filterExtension],
       getFilterValue,
       filterRange,
