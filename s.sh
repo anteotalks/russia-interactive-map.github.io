@@ -1,0 +1,3010 @@
+#!/bin/bash
+
+# Восстановление проекта deckgis-perfect7 до последней рабочей версии
+# Запускать в пустой директории!
+
+set -e  # прекращать выполнение при ошибке
+
+echo "🔧 Восстанавливаю структуру проекта..."
+
+# --- Создание корневых файлов ---
+
+# .gitignore
+cat > .gitignore << 'EOF'
+# Local
+.DS_Store
+*.local
+*.log*
+
+# Dist
+node_modules
+dist/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+
+.env.*.localm*.md
+EOF
+
+# .npmignore
+cat > .npmignore << 'EOF'
+renovate.json
+.github
+!pnpm-lock.yaml
+
+*.local
+EOF
+
+# eslint.config.js
+cat > eslint.config.js << 'EOF'
+import antfu from "@antfu/eslint-config";
+
+export default antfu({
+  stylistic: {
+    quotes: "double",
+    semi: true,
+  },
+  markdown: true,
+  jsonc: true,
+  typescript: true,
+  yaml: true,
+  react: true,
+  formatters: {
+    markdown: "prettier",
+  },
+  rules: {
+    "no-restricted-imports": ["error", { "patterns": ["@mui/material", "@mui/icons-material"] }],
+  },
+});
+EOF
+
+# LICENSE
+cat > LICENSE << 'EOF'
+MIT License
+
+Copyright (c) 2025 Trapar waves
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+EOF
+
+# lint-staged.config.js
+cat > lint-staged.config.js << 'EOF'
+/**
+ * @filename: lint-staged.config.js
+ * @type {import('lint-staged').Configuration}
+ */
+export default {
+  "*.{ts,tsx,js,css}": "eslint --cache --max-warnings=0 --no-warn-ignored",
+};
+EOF
+
+# pnpm-workspace.yaml
+cat > pnpm-workspace.yaml << 'EOF'
+onlyBuiltDependencies:
+  - "@tailwindcss/oxide"
+  - "@vaadin/vaadin-usage-statistics"
+  - core-js
+EOF
+
+# renovate.json
+cat > renovate.json << 'EOF'
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "rangeStrategy": "bump",
+  "packageRules": [
+    {
+      "matchPackageNames": [],
+      "enabled": false
+    }
+  ]
+}
+EOF
+
+# rsbuild.config.ts
+cat > rsbuild.config.ts << 'EOF'
+import { defineConfig, loadEnv } from "@rsbuild/core";
+import { pluginReact } from "@rsbuild/plugin-react";
+import tailwind from "@tailwindcss/postcss";
+
+const { publicVars } = loadEnv({ cwd: "./environments" });
+
+export default defineConfig({
+  plugins: [pluginReact()],
+  source: {
+    define: publicVars,
+  },
+  tools: {
+    postcss: {
+      postcssOptions: {
+        plugins: [tailwind],
+      },
+    },
+  },
+});
+EOF
+
+# taze.config.ts
+cat > taze.config.ts << 'EOF'
+import { defineConfig } from "taze";
+
+export default defineConfig({
+  packageMode: {
+    // "/deck.gl/": "ignore",
+    // "/luma.gl/": "ignore",
+  },
+});
+EOF
+
+# tsconfig.json
+cat > tsconfig.json << 'EOF'
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "jsx": "react-jsx",
+    "lib": ["DOM", "ES2020"],
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "incremental": true,
+    "tsBuildInfoFile": ".tsbuildinfo"
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
+}
+EOF
+
+# package.json
+cat > package.json << 'EOF'
+{
+  "name": "@trapar-waves/react-visgl-maplibre",
+  "type": "module",
+  "version": "1.1.23",
+  "packageManager": "pnpm@10.30.1",
+  "description": "A React-based geospatial visualization template integrating Three.js, Deck.gl, and MapLibre for 3D map interactions and rich geospatial data rendering.",
+  "author": {
+    "email": "admin@rikka.cc",
+    "name": "Rikka",
+    "url": "https://github.com/Muromi-Rikka"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/Trapar-waves/react-visgl-maplibre",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Trapar-waves/react-visgl-maplibre.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Trapar-waves/react-visgl-maplibre/issues"
+  },
+  "keywords": [
+    "react",
+    "fiber",
+    "maplibre",
+    "three",
+    "vis.gl",
+    "deck.gl"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "rsbuild dev --open",
+    "build": "rsbuild build",
+    "preview": "rsbuild preview",
+    "lint": "eslint . --cache --max-warnings=0 --no-warn-ignored",
+    "postinstall": "husky"
+  },
+  "dependencies": {
+    "@deck.gl/aggregation-layers": "^9.2.9",
+    "@deck.gl/core": "^9.2.9",
+    "@deck.gl/extensions": "^9.2.9",
+    "@deck.gl/geo-layers": "^9.2.9",
+    "@deck.gl/layers": "^9.2.9",
+    "@deck.gl/mapbox": "^9.2.9",
+    "@deck.gl/react": "^9.2.9",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@loaders.gl/3d-tiles": "^4.3.4",
+    "@loaders.gl/core": "^4.3.4",
+    "@loaders.gl/csv": "^4.3.4",
+    "@loaders.gl/tiles": "^4.3.4",
+    "@luma.gl/core": "^9.2.6",
+    "@luma.gl/webgl": "^9.2.6",
+    "@mui/icons-material": "^7.3.8",
+    "@mui/material": "^7.3.8",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.5.0",
+    "deck.gl": "^9.2.9",
+    "maplibre-gl": "^5.18.0",
+    "papaparse": "^5.5.3",
+    "react": "^19.2.4",
+    "react-colorful": "^5.6.1",
+    "react-dom": "^19.2.4",
+    "react-draggable": "^4.5.0",
+    "react-map-gl": "^8.1.0",
+    "react-three-map": "^1.0.0",
+    "three": "^0.183.1",
+    "three-stdlib": "^2.36.1"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^7.4.3",
+    "@eslint-react/eslint-plugin": "^2.13.0",
+    "@iconify/json": "^2.2.441",
+    "@iconify/tailwind4": "^1.2.1",
+    "@maplibre/maplibre-gl-style-spec": "^24.4.1",
+    "@rsbuild/core": "^1.7.3",
+    "@rsbuild/plugin-react": "^1.4.5",
+    "@tailwindcss/postcss": "^4.2.0",
+    "@types/mapbox-gl": "^3.5.0",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.183.1",
+    "eslint": "^10.0.1",
+    "eslint-plugin-format": "^1.4.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "mapbox-gl": "^3.18.1",
+    "tailwindcss": "^4.2.0",
+    "taze": "^19.9.2",
+    "typescript": "^5.9.3"
+  }
+}
+EOF
+
+# --- Создание папок и файлов environments ---
+mkdir -p environments
+cat > environments/.env << 'EOF'
+PUBLIC_MAPTILER_KEY="set your key"
+EOF
+
+# --- public ---
+mkdir -p public
+cat > public/.gitkeep << 'EOF'
+
+EOF
+
+cat > public/README.txt << 'EOF'
+Положи сюда свой CSV файл с именем data_seva_updated1.csv
+EOF
+
+cat > public/test-map.html << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+  <title>OpenFreeMap Test</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://unpkg.com/maplibre-gl@5.18.0/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@5.18.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    body { margin: 0; padding: 0; }
+    #map { width: 100%; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://tiles.openfreemap.org/styles/liberty',
+      center: [42.5, 43.5],
+      zoom: 10,
+      pitch: 75,
+      bearing: 30
+    });
+    
+    map.on('load', () => {
+      console.log('✅ Карта загружена, слои:', map.getStyle().layers.map(l => l.id));
+    });
+    
+    map.on('error', (e) => {
+      console.error('❌ Ошибка карты:', e);
+    });
+  </script>
+</body>
+</html>
+EOF
+
+# --- src/entities/location ---
+mkdir -p src/entities/location/api
+mkdir -p src/entities/location/lib
+
+cat > src/entities/location/api/locationApi.ts << 'EOF'
+import papa from 'papaparse';
+import { Location } from '../lib/types';
+
+const parseEuropeanNumber = (str: string): number => {
+  if (!str || str.trim() === '') return 0;
+  return parseFloat(str.replace(',', '.')) || 0;
+};
+
+export const fetchLocationsFromCSV = async (csvPath: string): Promise<Location[]> => {
+  const response = await fetch(csvPath);
+  const csvText = await response.text();
+
+  return new Promise((resolve, reject) => {
+    papa.parse<Location>(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: false,
+      complete: (results) => {
+        const locations = results.data
+          .filter((row: any) => row['ID'] && row['ID'].trim() !== '')
+          .map((row: any, index: number) => ({
+            id: index,
+            code_2021: row['Код 2021']?.trim() || '',
+            population_2002: parseEuropeanNumber(row['ВПН-2002']),
+            population_2010: parseEuropeanNumber(row['ВПН-2010']),
+            population_2021: parseEuropeanNumber(row['ВПН-2021']),
+            region: row['Регион']?.trim() || '',
+            municipal_formation: row['Муниципальное образование']?.trim() || '',
+            settlement: row['Поселение']?.trim() || '',
+            populated_place: row['Населенный пункт']?.trim() || '',
+            latitude: parseEuropeanNumber(row['Широта']),
+            longitude: parseEuropeanNumber(row['Долгота']),
+          }));
+        resolve(locations);
+      },
+      error: (error: any) => {
+        reject(error);
+      },
+    });
+  });
+};
+EOF
+
+cat > src/entities/location/lib/types.ts << 'EOF'
+export type Location = {
+    id: number;
+    code_2021: string;
+    population_2002: number;
+    population_2010: number;
+    population_2021: number;
+    region: string;
+    municipal_formation: string;
+    settlement: string;
+    populated_place: string;
+    latitude: number;
+    longitude: number;
+};
+
+export type VisualizationMode = 'dynamics' | 'absolute';
+export type DynamicsPeriod = '2002-2010' | '2010-2021' | '2002-2021';
+EOF
+
+cat > src/entities/location/index.ts << 'EOF'
+export { fetchLocationsFromCSV } from './api/locationApi';
+export type { Location } from './lib/types';
+EOF
+
+# --- src/entities/palette ---
+mkdir -p src/entities/palette/lib
+
+cat > src/entities/palette/lib/constants.ts << 'EOF'
+/**
+ * Полная библиотека палитр ColorBrewer и других популярных схем
+ * Источник: http://colorbrewer2.org, https://github.com/axismaps/colorbrewer
+ */
+
+export const PALETTE_LIBRARY = {
+  // ========== ДИВЕРГЕНТНЫЕ (Diverging) ==========
+  // Для данных с критическим средним значением (красный-белый-синий и аналоги)
+  'Красный-Жёлтый-Зелёный (RdYlGn)': ['#d7191c', '#ffffbf', '#1a9641'],
+  'Красный-Жёлтый-Синий (RdYlBu)': ['#d73027', '#ffffbf', '#4575b4'],
+  'Красный-Белый-Синий (RdBu)': ['#b2182b', '#f7f7f7', '#2166ac'],
+  'Красный-Серый (RdGy)': ['#b2182b', '#f7f7f7', '#4d4d4d'],
+  'Пурпурный-Оранжевый (PuOr)': ['#b35806', '#f7f7f7', '#542788'],
+  'Коричневый-Бирюзовый (BrBG)': ['#8c510a', '#f5f5f5', '#01665e'],
+  'Розовый-Зелёный (PiYG)': ['#c51b7d', '#f7f7f7', '#4d9221'],
+  'Пурпурный-Зелёный (PRGn)': ['#762a83', '#f7f7f7', '#1b7837'],
+  'Спектральный (Spectral)': ['#d7191c', '#ffffbf', '#2b83ba'],
+  
+  // ========== ПОСЛЕДОВАТЕЛЬНЫЕ (Sequential) ==========
+  // Для данных от низких к высоким значениям (одноцветные)
+  
+  // Синие оттенки
+  'Blues (Синие)': ['#f7fbff', '#6baed6', '#08306b'],
+  'BuGn (Сине-зелёные)': ['#f7fcfd', '#66c2a4', '#00441b'],
+  'BuPu (Сине-фиолетовые)': ['#f7fcfd', '#9e9ac8', '#4d004b'],
+  
+  // Зелёные оттенки
+  'Greens (Зелёные)': ['#f7fcf5', '#74c476', '#00441b'],
+  'GnBu (Зелёно-синие)': ['#f7fcf0', '#7fcdbb', '#084081'],  // ВОТ ОНА!
+  
+  // Оранжевые/Красные оттенки
+  'Oranges (Оранжевые)': ['#fff5eb', '#fd8d3c', '#7f2704'],
+  'OrRd (Оранжево-красные)': ['#fff7ec', '#fc8d59', '#7f0000'],
+  'Reds (Красные)': ['#fff5f0', '#fc4e2a', '#67000d'],
+  'RdPu (Красно-фиолетовые)': ['#fff7f3', '#df65b0', '#49006a'],
+  
+  // Фиолетовые оттенки
+  'Purples (Фиолетовые)': ['#fcfbfd', '#9e9ac8', '#3f007d'],
+  'PuBu (Фиолетово-синие)': ['#fff7fb', '#7fcdbb', '#023858'],
+  'PuBuGn (Фиолетово-сине-зелёные)': ['#fff7fb', '#a6bddb', '#014636'],
+  'PuRd (Фиолетово-красные)': ['#f7f4f9', '#dd1c77', '#67001f'],
+  
+  // Жёлтые/Коричневые оттенки
+  'YlGn (Жёлто-зелёные)': ['#ffffcc', '#41ab5d', '#004529'],
+  'YlGnBu (Жёлто-зелёно-синие)': ['#ffffcc', '#2c7fb8', '#081d58'],
+  'YlOrBr (Жёлто-оранжево-коричневые)': ['#ffffd4', '#fe9929', '#662506'],
+  'YlOrRd (Жёлто-оранжево-красные)': ['#ffffb2', '#fd8d3c', '#b10026'],
+  
+  // Монохромные
+  'Greys (Серые)': ['#f7f7f7', '#969696', '#252525'],
+  
+  // ========== QUALITATIVE (Качественные) ==========
+  // Для категориальных данных (максимальная различимость)
+  'Accent (Акцент)': ['#7fc97f', '#fdc086', '#386cb0'],
+  'Dark2 (Тёмный)': ['#1b9e77', '#d95f02', '#7570b3'],
+  'Paired (Парный)': ['#a6cee3', '#1f78b4', '#b2df8a'],
+  'Pastel1 (Пастельный 1)': ['#fbb4ae', '#b3cde3', '#ccebc5'],
+  'Pastel2 (Пастельный 2)': ['#b3e2cd', '#fdcdac', '#cbd5e8'],
+  'Set1 (Набор 1)': ['#e41a1c', '#377eb8', '#4daf4a'],
+  'Set2 (Набор 2)': ['#66c2a5', '#fc8d62', '#8da0cb'],
+  'Set3 (Набор 3)': ['#8dd3c7', '#ffffb3', '#bebada'],
+  
+  // ========== Viridis Family ==========
+  // Современные перцептивно равномерные палитры
+  'Viridis (Виридис)': ['#440154', '#21918c', '#fde725'],
+  'Plasma (Плазма)': ['#0d0887', '#9c179e', '#f0f921'],
+  'Inferno (Инферно)': ['#000004', '#bc3754', '#fcffa4'],
+  'Magma (Магма)': ['#000004', '#b73779', '#fcffa4'],
+  'Cividis (Цивидис)': ['#00204d', '#7c7b78', '#ffea46'],
+  'Turbo (Турбо)': ['#30123b', '#fb4d3d', '#a1fc3d'],
+  
+  // ========== Дополнительные популярные ==========
+  'Rainbow (Радуга)': ['#ff0000', '#ffff00', '#00ff00'],
+  'Jet (Реактивный)': ['#0000ff', '#00ffff', '#ff0000'],
+  'Hot (Горячий)': ['#0a0a0a', '#ffff00', '#ffffff'],
+  'Cool (Холодный)': ['#00ffff', '#ff00ff', '#ffff00'],
+  'Copper (Медный)': ['#000000', '#ff8000', '#bfbfbf'],
+  'Bone (Костяной)': ['#000000', '#d9d9d9', '#fff5eb'],
+  'Pink (Розовый)': ['#ffe6f0', '#ff69b4', '#8b008b'],
+  'Spring (Весна)': ['#ff00ff', '#ffff00', '#00ff00'],
+  'Summer (Лето)': ['#008000', '#ffff66', '#ffa500'],
+  'Autumn (Осень)': ['#ff0000', '#ffa500', '#ffff00'],
+  'Winter (Зима)': ['#0000ff', '#00ffff', '#ffffff'],
+  
+  // ========== Цвета для цветовой слепоты ==========
+  'Colorblind Safe 1': ['#d73027', '#fee090', '#1a9850'],
+  'Colorblind Safe 2': ['#ca0020', '#f7f7f7', '#0571b0'],
+  'Colorblind Safe 3': ['#b2182b', '#ef8a62', '#2166ac'],
+  
+  // ========== Специальные для карт ==========
+  'Terrain (Рельеф)': ['#009900', '#ffffbf', '#0066cc'],
+  'Bathymetry (Батиметрия)': ['#053061', '#92c5de', '#ffffff'],
+  'Elevation (Высоты)': ['#006837', '#fdae61', '#7f3b08'],
+  
+  // ========== Цвета моря и суши ==========
+  'Ocean (Океан)': ['#08306b', '#4292c6', '#deebf7'],
+  'Land (Суша)': ['#006d2c', '#74c476', '#edf8e9'],
+  
+  // ========== Цвета для температурных карт ==========
+  'Temperature (Температура)': ['#313695', '#ffffbf', '#a50026'],
+  'Precipitation (Осадки)': ['#ffffcc', '#41b6c4', '#0c2c84'],
+  
+  // ========== Цвета для населения (плотность) ==========
+  'Population Density 1': ['#f7fcf5', '#7fcdbb', '#084081'],
+  'Population Density 2': ['#fff7fb', '#9e9ac8', '#3f007d'],
+  'Population Density 3': ['#ffffb2', '#fd8d3c', '#bd0026'],
+  
+  // ========== Цвета для динамики (специальные) ==========
+  'Growth-Decline 1': ['#b2182b', '#ffffff', '#2166ac'],
+  'Growth-Decline 2': ['#d73027', '#fee090', '#1a9850'],
+  'Growth-Decline 3': ['#ca0020', '#f7f7f7', '#0571b0'],
+  
+  // ========== Градиенты заката ==========
+  'Sunset (Закат)': ['#ff7f00', '#ffff33', '#0066cc'],
+  'Sunrise (Рассвет)': ['#003366', '#ffcc00', '#ff3300'],
+  
+  // ========== Винтажные ==========
+  'Vintage 1': ['#8c510a', '#f6e8c3', '#01665e'],
+  'Vintage 2': ['#762a83', '#f7f7f7', '#1b7837'],
+  'Vintage 3': ['#b35806', '#fee0b6', '#542788'],
+} as const;
+
+/**
+ * Палитра по умолчанию (Красный-Жёлтый-Зелёный)
+ */
+export const DEFAULT_PALETTE: string[] = [...PALETTE_LIBRARY['Красный-Жёлтый-Зелёный (RdYlGn)']];
+
+/**
+ * Тип для названий палитр
+ */
+export type PaletteName = keyof typeof PALETTE_LIBRARY;
+
+/**
+ * Категории палитр для организации в меню
+ */
+export const PALETTE_CATEGORIES = {
+  'Дивергентные (для динамики)': [
+    'Красный-Жёлтый-Зелёный (RdYlGn)',
+    'Красный-Жёлтый-Синий (RdYlBu)',
+    'Красный-Белый-Синий (RdBu)',
+    'Красный-Серый (RdGy)',
+    'Пурпурный-Оранжевый (PuOr)',
+    'Коричневый-Бирюзовый (BrBG)',
+    'Розовый-Зелёный (PiYG)',
+    'Пурпурный-Зелёный (PRGn)',
+    'Спектральный (Spectral)',
+  ],
+  'Последовательные (одноцветные)': [
+    'Blues (Синие)',
+    'BuGn (Сине-зелёные)',
+    'BuPu (Сине-фиолетовые)',
+    'Greens (Зелёные)',
+    'GnBu (Зелёно-синие)',
+    'Oranges (Оранжевые)',
+    'OrRd (Оранжево-красные)',
+    'Reds (Красные)',
+    'RdPu (Красно-фиолетовые)',
+    'Purples (Фиолетовые)',
+    'PuBu (Фиолетово-синие)',
+    'PuBuGn (Фиолетово-сине-зелёные)',
+    'PuRd (Фиолетово-красные)',
+    'YlGn (Жёлто-зелёные)',
+    'YlGnBu (Жёлто-зелёно-синие)',
+    'YlOrBr (Жёлто-оранжево-коричневые)',
+    'YlOrRd (Жёлто-оранжево-красные)',
+    'Greys (Серые)',
+  ],
+  'Качественные (категории)': [
+    'Accent (Акцент)',
+    'Dark2 (Тёмный)',
+    'Paired (Парный)',
+    'Pastel1 (Пастельный 1)',
+    'Pastel2 (Пастельный 2)',
+    'Set1 (Набор 1)',
+    'Set2 (Набор 2)',
+    'Set3 (Набор 3)',
+  ],
+  'Viridis Family': [
+    'Viridis (Виридис)',
+    'Plasma (Плазма)',
+    'Inferno (Инферно)',
+    'Magma (Магма)',
+    'Cividis (Цивидис)',
+    'Turbo (Турбо)',
+  ],
+  'Специальные': [
+    'Rainbow (Радуга)',
+    'Jet (Реактивный)',
+    'Hot (Горячий)',
+    'Cool (Холодный)',
+    'Copper (Медный)',
+    'Bone (Костяной)',
+    'Pink (Розовый)',
+    'Spring (Весна)',
+    'Summer (Лето)',
+    'Autumn (Осень)',
+    'Winter (Зима)',
+  ],
+  'Для цветовой слепоты': [
+    'Colorblind Safe 1',
+    'Colorblind Safe 2',
+    'Colorblind Safe 3',
+  ],
+  'Картографические': [
+    'Terrain (Рельеф)',
+    'Bathymetry (Батиметрия)',
+    'Elevation (Высоты)',
+    'Ocean (Океан)',
+    'Land (Суша)',
+    'Temperature (Температура)',
+    'Precipitation (Осадки)',
+  ],
+  'Для населения': [
+    'Population Density 1',
+    'Population Density 2',
+    'Population Density 3',
+    'Growth-Decline 1',
+    'Growth-Decline 2',
+    'Growth-Decline 3',
+  ],
+  'Винтажные': [
+    'Vintage 1',
+    'Vintage 2',
+    'Vintage 3',
+    'Sunset (Закат)',
+    'Sunrise (Рассвет)',
+  ],
+} as const;
+EOF
+
+cat > src/entities/palette/lib/index.ts << 'EOF'
+export * from './constants';
+export * from './types';
+EOF
+
+cat > src/entities/palette/lib/types.ts << 'EOF'
+/**
+ * Типы для работы с цветами и палитрами
+ */
+
+export type RgbColor = [number, number, number];
+export type RgbaColor = [number, number, number, number];
+
+/**
+ * Конфигурация градиента
+ */
+export interface GradientConfig {
+  /** Цвет для отрицательных значений (минимум) */
+  startColor: string;
+  /** Цвет для нулевого значения (середина) */
+  midColor: string;
+  /** Цвет для положительных значений (максимум) */
+  endColor: string;
+}
+
+/**
+ * Состояние палитры в приложении
+ */
+export interface PaletteState {
+  /** Текущая выбранная палитра из библиотеки */
+  selectedPalette: PaletteName | 'custom';
+  /** Пользовательский градиент (если выбран custom) */
+  customGradient: GradientConfig;
+  /** Флаг инвертирования */
+  inverted: boolean;
+}
+
+/**
+ * События изменения палитры
+ */
+export interface PaletteEvents {
+  onPaletteChange: (palette: string[]) => void;
+  onInvert: () => void;
+  onCustomGradientChange: (gradient: GradientConfig) => void;
+}
+EOF
+
+cat > src/entities/palette/index.ts << 'EOF'
+export * from './lib/constants';
+export * from './lib/types';
+EOF
+
+# --- src/pages/MapPage ---
+mkdir -p src/pages/MapPage/lib
+mkdir -p src/pages/MapPage/ui
+
+cat > src/pages/MapPage/lib/mapLayers.ts << 'EOF'
+import type { LayerConfig } from '../../../widgets/LayersControl/ui/LayersControl';
+
+// Все доступные стили OpenFreeMap
+// Источник: https://openfreemap.org/quick_start/
+export const OPENFREEMAP_STYLES: LayerConfig[] = [
+  {
+    id: 'openfreemap-liberty',
+    name: 'OpenFreeMap Liberty',
+    styleUrl: 'https://tiles.openfreemap.org/styles/liberty',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© OpenFreeMap © OpenMapTiles © OpenStreetMap'
+  },
+  {
+    id: 'openfreemap-bright',
+    name: 'OpenFreeMap Bright',
+    styleUrl: 'https://tiles.openfreemap.org/styles/bright',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© OpenFreeMap © OpenMapTiles © OpenStreetMap'
+  },
+  {
+    id: 'openfreemap-positron',
+    name: 'OpenFreeMap Positron',
+    styleUrl: 'https://tiles.openfreemap.org/styles/positron',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© OpenFreeMap © OpenMapTiles © OpenStreetMap'
+  },
+  {
+    id: 'openfreemap-dark',
+    name: 'OpenFreeMap Dark',
+    styleUrl: 'https://tiles.openfreemap.org/styles/dark',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© OpenFreeMap © OpenMapTiles © OpenStreetMap'
+  },
+  {
+    id: 'openfreemap-fiord',
+    name: 'OpenFreeMap Fiord',
+    styleUrl: 'https://tiles.openfreemap.org/styles/fiord',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© OpenFreeMap © OpenMapTiles © OpenStreetMap'
+  },
+  {
+    id: 'openfreemap-3d',
+    name: 'OpenFreeMap 3D',
+    styleUrl: 'https://tiles.openfreemap.org/styles/positron',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© OpenFreeMap © OpenMapTiles © OpenStreetMap'
+  }
+];
+
+// Существующие растровые слои
+export const RASTER_LAYERS: LayerConfig[] = [
+  {
+    id: 'osm',
+    name: 'OpenStreetMap',
+    tileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    mapType: 'raster',
+    visible: true,
+    type: 'base',
+    maxZoom: 19,
+    attribution: '© OpenStreetMap'
+  },
+  {
+    id: 'satellite',
+    name: 'Спутник (ArcGIS)',
+    tileUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    mapType: 'raster',
+    visible: false,
+    type: 'base',
+    maxZoom: 19,
+    attribution: '© Esri, Maxar, Earthstar Geographics'
+  }
+];
+
+// Слой Maptiler Dark (векторный)
+export const MAPTILER_DARK: LayerConfig = {
+  id: 'dark',
+  name: 'Maptiler Dark',
+  styleUrl: `https://api.maptiler.com/maps/dark/style.json?key=${import.meta.env.PUBLIC_MAPTILER_KEY}`,
+  mapType: 'vector',
+  visible: false,
+  type: 'base',
+  attribution: '© Maptiler © OpenStreetMap'
+};
+
+// Объединяем все слои в один массив
+export const ALL_BASE_LAYERS: LayerConfig[] = [
+  // Растровые слои
+  ...RASTER_LAYERS,
+  
+  // Maptiler Dark
+  MAPTILER_DARK,
+  
+  // OpenFreeMap стили
+  ...OPENFREEMAP_STYLES,
+  
+  // CARTO стили (бесплатные, без токена)
+  {
+    id: 'carto-positron',
+    name: 'CARTO Positron (светлая)',
+    styleUrl: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© CARTO © OpenStreetMap'
+  },
+  {
+    id: 'carto-dark-matter',
+    name: 'CARTO Dark Matter (тёмная)',
+    styleUrl: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© CARTO © OpenStreetMap'
+  },
+  {
+    id: 'carto-voyager',
+    name: 'CARTO Voyager (нейтральная)',
+    styleUrl: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© CARTO © OpenStreetMap'
+  },
+  {
+    id: 'carto-positron-nolabels',
+    name: 'CARTO Positron (без подписей)',
+    styleUrl: 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© CARTO © OpenStreetMap'
+  },
+  {
+    id: 'carto-dark-matter-nolabels',
+    name: 'CARTO Dark Matter (без подписей)',
+    styleUrl: 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© CARTO © OpenStreetMap'
+  },
+  {
+    id: 'carto-voyager-nolabels',
+    name: 'CARTO Voyager (без подписей)',
+    styleUrl: 'https://basemaps.cartocdn.com/gl/voyager-nolabels-gl-style/style.json',
+    mapType: 'vector',
+    visible: false,
+    type: 'base',
+    attribution: '© CARTO © OpenStreetMap'
+  }
+];
+EOF
+
+cat > src/pages/MapPage/lib/types.ts << 'EOF'
+export type YearType = '2002' | '2010' | '2021';
+
+export interface VisualizationSettings {
+  selectedYear: YearType;
+  minRadius: number;
+  powerCoefficient: number;
+  radiusScale: number;
+  strokeWidth: number;
+  strokeColor: string;
+}
+EOF
+
+cat > src/pages/MapPage/lib/useMapLayers.ts << 'EOF'
+import { useMemo, useCallback } from 'react';
+import { ScatterplotLayer } from '@deck.gl/layers';
+import { DataFilterExtension } from '@deck.gl/extensions';
+import type { Color } from '@deck.gl/core';
+import { Location } from '../../../entities/location/lib/types';
+import {
+  getColorByDynamics,
+  getColorByAbsoluteChange,
+  getAbsoluteChange,
+  getNeutralColor,
+  hexToRgb
+} from '../../../shared/lib/color';
+
+interface LayerSettings {
+  selectedYear: '2002' | '2010' | '2021';
+  powerCoefficient: number;
+  radiusScale: number;
+  minRadius: number;
+  mode: 'dynamics' | 'absolute';
+  dynamicsPeriod: '2002-2010' | '2010-2021' | '2002-2021';
+  absolutePeriod: '2002-2010' | '2010-2021' | '2002-2021';
+  strokeWidth: number;
+  strokeColor: string;
+  fillOpacity: number;
+  populationMin: number;
+  populationMax: number;
+  dynamicsMin: number;
+  dynamicsMax: number;
+  showZeroPopulation: boolean;
+}
+
+export const useMapLayers = (
+  data: Location[] | null,
+  settings: LayerSettings,
+  palette: string[]
+) => {
+  const strokeRgb = useMemo(() => {
+    try {
+      return hexToRgb(settings.strokeColor);
+    } catch {
+      return [0, 0, 0] as [number, number, number];
+    }
+  }, [settings.strokeColor]);
+
+  const getFillColor = useCallback((d: Location): Color => {
+    const pop2002 = d.population_2002;
+    const pop2010 = d.population_2010;
+    const pop2021 = d.population_2021;
+
+    if (settings.mode === 'absolute') {
+      const change = getAbsoluteChange(d, settings.absolutePeriod);
+      return getColorByAbsoluteChange(change, palette, settings.fillOpacity) as Color;
+    }
+
+    if (settings.selectedYear === '2002') {
+      return getNeutralColor(palette, settings.fillOpacity) as Color;
+    }
+
+    if (settings.selectedYear === '2010') {
+      if (pop2002 === 0 || isNaN(pop2002) || !isFinite(pop2002)) {
+        return getNeutralColor(palette, settings.fillOpacity) as Color;
+      }
+      const changePercent = ((pop2010 - pop2002) / pop2002) * 100;
+      return getColorByDynamics(changePercent, palette, settings.fillOpacity) as Color;
+    }
+
+    if (settings.selectedYear === '2021') {
+      if (settings.dynamicsPeriod === '2010-2021') {
+        if (pop2010 === 0 || isNaN(pop2010) || !isFinite(pop2010)) {
+          return getNeutralColor(palette, settings.fillOpacity) as Color;
+        }
+        const changePercent = ((pop2021 - pop2010) / pop2010) * 100;
+        return getColorByDynamics(changePercent, palette, settings.fillOpacity) as Color;
+      } else {
+        if (pop2002 === 0 || isNaN(pop2002) || !isFinite(pop2002)) {
+          return getNeutralColor(palette, settings.fillOpacity) as Color;
+        }
+        const changePercent = ((pop2021 - pop2002) / pop2002) * 100;
+        return getColorByDynamics(changePercent, palette, settings.fillOpacity) as Color;
+      }
+    }
+
+    return getNeutralColor(palette, settings.fillOpacity) as Color;
+  }, [settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod, palette, settings.fillOpacity]);
+
+  const getRadius = useCallback((d: Location): number => {
+    if (settings.mode === 'absolute') {
+      const change = Math.abs(getAbsoluteChange(d, settings.absolutePeriod));
+      if (change === 0 || isNaN(change) || !isFinite(change)) {
+        return settings.minRadius;
+      }
+      return Math.pow(change, settings.powerCoefficient);
+    }
+
+    const pop = d[`population_${settings.selectedYear}`];
+    if (pop === 0 || isNaN(pop) || !isFinite(pop)) {
+      return settings.minRadius;
+    }
+    return Math.pow(pop, settings.powerCoefficient);
+  }, [settings.selectedYear, settings.powerCoefficient, settings.mode, settings.absolutePeriod, settings.minRadius]);
+
+  const getLineWidth = useCallback((_d: Location): number => {
+    return settings.strokeWidth;
+  }, [settings.strokeWidth]);
+
+  const getFilterValue = useCallback((d: Location): [number, number] => {
+    const pop = d[`population_${settings.selectedYear}`] || 0;
+
+    let dynamicsPercent = 0;
+    const pop2002 = d.population_2002;
+    const pop2010 = d.population_2010;
+    const pop2021 = d.population_2021;
+
+    if (settings.mode === 'absolute') {
+      if (settings.absolutePeriod === '2002-2010') {
+        if (pop2002 > 0) dynamicsPercent = ((pop2010 - pop2002) / pop2002) * 100;
+      } else if (settings.absolutePeriod === '2010-2021') {
+        if (pop2010 > 0) dynamicsPercent = ((pop2021 - pop2010) / pop2010) * 100;
+      } else {
+        if (pop2002 > 0) dynamicsPercent = ((pop2021 - pop2002) / pop2002) * 100;
+      }
+    } else {
+      if (settings.selectedYear === '2010') {
+        if (pop2002 > 0) dynamicsPercent = ((pop2010 - pop2002) / pop2002) * 100;
+      } else if (settings.selectedYear === '2021') {
+        if (settings.dynamicsPeriod === '2010-2021') {
+          if (pop2010 > 0) dynamicsPercent = ((pop2021 - pop2010) / pop2010) * 100;
+        } else {
+          if (pop2002 > 0) dynamicsPercent = ((pop2021 - pop2002) / pop2002) * 100;
+        }
+      }
+    }
+
+    return [pop, dynamicsPercent];
+  }, [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod]);
+
+  const filterRange: [number, number][] = useMemo(() => {
+    const popMin = settings.populationMin > 0 ? settings.populationMin : -Infinity;
+    const popMax = settings.populationMax > 0 ? settings.populationMax : Infinity;
+    const effectivePopMin = settings.showZeroPopulation ? popMin : Math.max(popMin, 0.1);
+
+    return [
+      [effectivePopMin, popMax],
+      [settings.dynamicsMin, settings.dynamicsMax]
+    ];
+  }, [settings.populationMin, settings.populationMax, settings.dynamicsMin, settings.dynamicsMax, settings.showZeroPopulation]);
+
+  const filterExtension = useMemo(() => new DataFilterExtension({ filterSize: 2 }), []);
+
+  const layer = useMemo(() => {
+    if (!data || data.length === 0) return null;
+
+    return new ScatterplotLayer<Location>({
+      id: 'locations-layer',
+      data,
+      getPosition: (d: Location) => [d.longitude, d.latitude],
+      getFillColor,
+      getRadius,
+      stroked: settings.strokeWidth > 0,
+      getLineColor: [...strokeRgb, 255] as Color,
+      getLineWidth,
+      radiusScale: settings.radiusScale,
+      lineWidthUnits: 'pixels',
+      lineWidthScale: 1,
+      lineWidthMinPixels: settings.strokeWidth > 0 ? 0.5 : 0,
+      lineWidthMaxPixels: 10,
+      radiusMinPixels: settings.minRadius,
+      radiusMaxPixels: 300,
+      extensions: [filterExtension],
+      getFilterValue,
+      filterRange,
+      updateTriggers: {
+        getFillColor: [settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod, palette, settings.fillOpacity],
+        getRadius: [settings.selectedYear, settings.powerCoefficient, settings.mode, settings.absolutePeriod, settings.minRadius],
+        stroked: [settings.strokeWidth],
+        getLineColor: [settings.strokeColor],
+        getLineWidth: [settings.strokeWidth],
+        getFilterValue: [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod],
+        filterRange: [settings.populationMin, settings.populationMax, settings.dynamicsMin, settings.dynamicsMax, settings.showZeroPopulation],
+      },
+      pickable: true,
+      parameters: {
+        depthWriteEnabled: false,
+        depthCompare: 'always'
+      } as const,
+    });
+  }, [data, getFillColor, getRadius, getLineWidth, settings.radiusScale, settings.minRadius, settings.strokeWidth, settings.strokeColor, strokeRgb, filterExtension, getFilterValue, filterRange]);
+
+  return useMemo(() => (layer ? [layer] : []), [layer]);
+};
+EOF
+
+cat > src/pages/MapPage/ui/MapPage.tsx << 'EOF'
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { MapWidget, TerrainMode } from '../../../widgets/Map/ui/MapWidget';
+import { ControlPanel, DynamicsPeriod, YearType, VisualizationMode, FilterDirection, TerrainMode as PanelTerrainMode } from '../../../widgets/ControlPanel/ui/ControlPanel';
+import { fetchLocationsFromCSV } from '../../../entities/location/api/locationApi';
+import type { Location } from '../../../entities/location/lib/types';
+import { useMapLayers } from '../lib/useMapLayers';
+import type { PickingInfo } from '@deck.gl/core';
+import { useAltKeyPress } from '../../../shared/lib/hooks';
+import { useMapLayersControl } from '../../../shared/lib/hooks/useMapLayersControl';
+import { ALL_BASE_LAYERS } from '../lib/mapLayers';
+import { usePalette } from '../../../shared/lib/hooks/usePalette';
+import { useCamera } from '../../../shared/lib/hooks/useCamera';
+import { DEFAULT_FILTER_SETTINGS, FilterSettings } from '../../../shared/types/visualization';
+import type { PaletteName } from '../../../entities/palette/lib/constants';
+
+export interface VisualizationSettings {
+  selectedYear: YearType;
+  minRadius: number;
+  powerCoefficient: number;
+  radiusScale: number;
+  strokeWidth: number;
+  strokeColor: string;
+  fillOpacity: number;
+}
+
+const defaultSettings: VisualizationSettings = {
+  selectedYear: '2021',
+  minRadius: 2,
+  powerCoefficient: 0.5,
+  radiusScale: 3,
+  strokeWidth: 1,
+  strokeColor: '#000000',
+  fillOpacity: 0.78,
+};
+
+const getPopulationExtents = (locations: Location[]): [number, number] => {
+  if (!locations.length) return [0, 10000000];
+  let max = 0;
+  locations.forEach(loc => [loc.population_2002, loc.population_2010, loc.population_2021].forEach(p => { if (p > max) max = p; }));
+  return [0, max];
+};
+
+const getDynamicsExtents = (locations: Location[]): [number, number] => {
+  if (!locations.length) return [-100, 100];
+  let min = Infinity, max = -Infinity;
+  locations.forEach(loc => {
+    const calc = (s: number, e: number) => s > 0 ? ((e - s) / s) * 100 : 0;
+    [calc(loc.population_2002, loc.population_2010), calc(loc.population_2010, loc.population_2021), calc(loc.population_2002, loc.population_2021)].forEach(d => {
+      if (d < min) min = d; if (d > max) max = d;
+    });
+  });
+  return [min === Infinity ? -100 : Math.floor(min), max === -Infinity ? 100 : Math.ceil(max)];
+};
+
+export const MapPage: React.FC = () => {
+  const [locations, setLocations] = useState<Location[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [settings, setSettings] = useState<VisualizationSettings>(defaultSettings);
+  const [mode, setMode] = useState<VisualizationMode>('dynamics');
+  const [dynamicsMode, setDynamicsMode] = useState<'2010-2021' | '2002-2021'>('2010-2021');
+  const [absolutePeriod, setAbsolutePeriod] = useState<DynamicsPeriod>('2002-2021');
+  const [absoluteFilter, setAbsoluteFilter] = useState<FilterDirection>('all');
+  const [isPanelVisible, setIsPanelVisible] = useState(true);
+  const [filterSettings, setFilterSettings] = useState<FilterSettings>(DEFAULT_FILTER_SETTINGS);
+  const [populationMax, setPopulationMax] = useState(10000000);
+  const [dynamicsMin, setDynamicsMin] = useState(-100);
+  const [dynamicsMax, setDynamicsMax] = useState(100);
+  const [terrainMode, setTerrainMode] = useState<TerrainMode>('hillshade');
+
+  const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
+  const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
+  const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchLocationsFromCSV('/data_seva_updated1.csv');
+        setLocations(data);
+        setPopulationMax(getPopulationExtents(data)[1]);
+        const dynExt = getDynamicsExtents(data);
+        setDynamicsMin(dynExt[0]); setDynamicsMax(dynExt[1]);
+      } catch (error) { console.error('Failed to load locations:', error); } finally { setIsLoading(false); }
+    };
+    loadData();
+  }, []);
+
+  const handleMapViewStateChange = useCallback((newViewState: any) => handleViewStateChange(newViewState), [handleViewStateChange]);
+  const handleCameraChange = useCallback((key: keyof typeof cameraSettings, value: number) => { updateCameraSetting(key, value); updateViewState({ [key]: value }); }, [updateCameraSetting, updateViewState]);
+  useAltKeyPress(() => setIsPanelVisible(prev => !prev));
+  const handleFilterChange = useCallback((newFilter: Partial<FilterSettings>) => setFilterSettings(prev => ({ ...prev, ...newFilter })), []);
+  const handleTerrainModeChange = useCallback((mode: TerrainMode) => setTerrainMode(mode), []);
+
+  const stableLocations = useMemo(() => locations, [locations]);
+
+  const layerSettings = useMemo(() => ({
+    selectedYear: settings.selectedYear,
+    powerCoefficient: settings.powerCoefficient,
+    radiusScale: settings.radiusScale,
+    minRadius: settings.minRadius,
+    mode,
+    dynamicsPeriod: dynamicsMode,
+    absolutePeriod,
+    strokeWidth: settings.strokeWidth,
+    strokeColor: settings.strokeColor,
+    fillOpacity: settings.fillOpacity,
+    populationMin: filterSettings.populationMin,
+    populationMax: filterSettings.populationMax,
+    dynamicsMin: filterSettings.dynamicsMin,
+    dynamicsMax: filterSettings.dynamicsMax,
+    showZeroPopulation: filterSettings.showZeroPopulation,
+  }), [settings, mode, dynamicsMode, absolutePeriod, filterSettings]);
+
+  const deckLayers = useMapLayers(stableLocations, layerSettings, palette);
+
+  const handleSettingsChange = useCallback((newSettings: Partial<VisualizationSettings>) => setSettings(prev => ({ ...prev, ...newSettings })), []);
+  const handleModeChange = useCallback((newMode: VisualizationMode) => setMode(newMode), []);
+  const handleDynamicsModeChange = useCallback((mode: DynamicsPeriod) => { if (mode === '2010-2021' || mode === '2002-2021') setDynamicsMode(mode); }, []);
+  const handleAbsolutePeriodChange = useCallback((period: DynamicsPeriod) => setAbsolutePeriod(period), []);
+  const handleAbsoluteFilterChange = useCallback((filter: FilterDirection) => setAbsoluteFilter(filter), []);
+  const handlePanelVisibilityChange = useCallback((visible: boolean) => setIsPanelVisible(visible), []);
+  const handlePaletteNameChange = useCallback((name: PaletteName | 'custom') => selectPalette(name), [selectPalette]);
+
+  const getTooltip = useCallback(({ object }: PickingInfo) => {
+    if (!object) return null;
+    const location = object as Location;
+    return { html: `<div><strong>${location.populated_place}</strong><br/>Регион: ${location.region}<br/>Население (2002): ${location.population_2002.toLocaleString()}<br/>Население (2010): ${location.population_2010.toLocaleString()}<br/>Население (2021): ${location.population_2021.toLocaleString()}</div>`, style: { backgroundColor: '#111', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px' } };
+  }, []);
+
+  if (isLoading) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw', position: 'fixed', top: 0, left: 0, backgroundColor: '#fff', zIndex: 2000 }}>Загрузка данных...</div>;
+  }
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <ControlPanel
+        settings={settings}
+        onSettingsChange={handleSettingsChange}
+        selectedYear={settings.selectedYear}
+        dynamicsMode={dynamicsMode}
+        onDynamicsModeChange={handleDynamicsModeChange}
+        mode={mode}
+        onModeChange={handleModeChange}
+        absolutePeriod={absolutePeriod}
+        onAbsolutePeriodChange={handleAbsolutePeriodChange}
+        absoluteFilter={absoluteFilter}
+        onAbsoluteFilterChange={handleAbsoluteFilterChange}
+        currentPalette={palette}
+        selectedPaletteName={selectedName}
+        customGradient={customGradient}
+        onPaletteChange={setPaletteColors}
+        onPaletteNameChange={handlePaletteNameChange}
+        onCustomGradientChange={setCustomGradient}
+        onInvert={toggleInvert}
+        layers={mapLayers}
+        terrainEnabled={terrainMode !== 'none'}
+        onToggleLayer={toggleLayer}
+        onToggleTerrain={() => handleTerrainModeChange(terrainMode === 'none' ? 'hillshade' : 'none')}
+        cameraSettings={cameraSettings}
+        onCameraChange={handleCameraChange}
+        onCameraReset={resetCamera}
+        onCameraSync={() => {}}
+        isCameraSynced={true}
+        isVisible={isPanelVisible}
+        onVisibilityChange={handlePanelVisibilityChange}
+        filterSettings={filterSettings}
+        onFilterChange={handleFilterChange}
+        populationMin={0}
+        populationMax={populationMax}
+        dynamicsMin={dynamicsMin}
+        dynamicsMax={dynamicsMax}
+        terrainMode={terrainMode}
+        onTerrainModeChange={handleTerrainModeChange}
+      />
+      <MapWidget
+        ref={mapRef}
+        baseLayer={baseLayer}
+        terrainMode={terrainMode}
+        layers={deckLayers}
+        getTooltip={getTooltip}
+        viewState={viewState}
+        onViewStateChange={handleMapViewStateChange}
+      />
+    </div>
+  );
+};
+
+export default MapPage;
+EOF
+
+cat > src/pages/MapPage/index.ts << 'EOF'
+export { default as MapPage } from './ui/MapPage';
+EOF
+
+# --- src/shared/lib/color ---
+mkdir -p src/shared/lib/color
+
+cat > src/shared/lib/color/index.ts << 'EOF'
+export * from './utils';
+EOF
+
+cat > src/shared/lib/color/utils.ts << 'EOF'
+import { Location } from '../../../entities/location/lib/types';
+import { DynamicsPeriod } from '../../../entities/location/lib/types';
+
+export type RgbColor = [number, number, number];
+export type RgbaColor = [number, number, number, number];
+
+export const hexToRgb = (hex: string): RgbColor => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result 
+    ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)]
+    : [0, 0, 0];
+};
+
+export const getColorFromPalette = (palette: string[], normalizedValue: number, opacity: number = 0.78): RgbaColor => {
+  const alpha = Math.round(opacity * 255);
+  if (palette.length === 0) return [128, 128, 128, alpha];
+  if (palette.length === 3) {
+    if (normalizedValue <= 0.5) {
+      const c1 = hexToRgb(palette[0]);
+      const c2 = hexToRgb(palette[1]);
+      const f = normalizedValue * 2;
+      return [
+        Math.round(c1[0] + (c2[0] - c1[0]) * f),
+        Math.round(c1[1] + (c2[1] - c1[1]) * f),
+        Math.round(c1[2] + (c2[2] - c1[2]) * f),
+        alpha,
+      ];
+    } else {
+      const c1 = hexToRgb(palette[1]);
+      const c2 = hexToRgb(palette[2]);
+      const f = (normalizedValue - 0.5) * 2;
+      return [
+        Math.round(c1[0] + (c2[0] - c1[0]) * f),
+        Math.round(c1[1] + (c2[1] - c1[1]) * f),
+        Math.round(c1[2] + (c2[2] - c1[2]) * f),
+        alpha,
+      ];
+    }
+  }
+  const index = Math.min(Math.floor(normalizedValue * palette.length), palette.length - 1);
+  const [r, g, b] = hexToRgb(palette[index]);
+  return [r, g, b, alpha];
+};
+
+export const getColorByDynamics = (changePercent: number, palette: string[], opacity: number = 0.78): RgbaColor => {
+  if (palette.length < 3) return [128, 128, 128, Math.round(opacity * 255)];
+  const clamped = Math.max(-100, Math.min(100, changePercent));
+  const normalized = (clamped + 100) / 200;
+  return getColorFromPalette(palette, normalized, opacity);
+};
+
+export const getNeutralColor = (palette: string[], opacity: number = 0.78): RgbaColor => {
+  if (palette.length >= 3) {
+    const [r, g, b] = hexToRgb(palette[1]);
+    return [r, g, b, Math.round(opacity * 255)];
+  }
+  return [128, 128, 128, Math.round(opacity * 255)];
+};
+
+export const invertPalette = (colors: string[]): string[] => {
+  if (colors.length < 2) return colors;
+  const reversed = [...colors];
+  [reversed[0], reversed[reversed.length - 1]] = [reversed[reversed.length - 1], reversed[0]];
+  return reversed;
+};
+
+export const getAbsoluteChange = (location: Location, period: DynamicsPeriod): number => {
+  switch(period) {
+    case '2002-2010':
+      return location.population_2010 - location.population_2002;
+    case '2010-2021':
+      return location.population_2021 - location.population_2010;
+    case '2002-2021':
+    default:
+      return location.population_2021 - location.population_2002;
+  }
+};
+
+export const getColorByAbsoluteChange = (change: number, palette: string[], opacity: number = 0.78): RgbaColor => {
+  const alpha = Math.round(opacity * 255);
+  if (palette.length < 3) return [128, 128, 128, alpha];
+  if (change > 0) {
+    const [r, g, b] = hexToRgb(palette[palette.length - 1]);
+    return [r, g, b, alpha];
+  }
+  if (change < 0) {
+    const [r, g, b] = hexToRgb(palette[0]);
+    return [r, g, b, alpha];
+  }
+  const [r, g, b] = hexToRgb(palette[1]);
+  return [r, g, b, alpha];
+};
+EOF
+
+# --- src/shared/lib/deckgl ---
+mkdir -p src/shared/lib/deckgl
+cat > src/shared/lib/deckgl/index.ts << 'EOF'
+// DeckGLOverlay удален, так как больше не используется
+// Используйте MapWidget с правильной архитектурой
+export {};
+EOF
+
+# --- src/shared/lib/hooks ---
+mkdir -p src/shared/lib/hooks
+cat > src/shared/lib/hooks/index.ts << 'EOF'
+export { useKeyPress, useAltKeyPress } from './useKeyPress';
+export { usePalette } from './usePalette';
+export { useCamera } from './useCamera';
+export { default as useMapLayersControl } from './useMapLayersControl';
+EOF
+
+cat > src/shared/lib/hooks/useKeyPress.ts << 'EOF'
+import { useEffect, useCallback, useRef } from 'react';
+
+export const useKeyPress = (targetKey: string, callback: () => void) => {
+  const callbackRef = useRef(callback);
+  
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
+    if (event.key.toLowerCase() === targetKey.toLowerCase()) {
+      event.preventDefault();
+      callbackRef.current();
+    }
+  }, [targetKey]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+};
+
+export const useAltKeyPress = (callback: () => void) => {
+  return useKeyPress('alt', callback);
+};
+EOF
+
+cat > src/shared/lib/hooks/useMapLayersControl.ts << 'EOF'
+import { useState, useCallback, useMemo } from 'react';
+import { CameraSettings, DEFAULT_CAMERA_SETTINGS } from '../../types/camera';
+
+export interface LayerConfig {
+  id: string;
+  name: string;
+  visible: boolean;
+  type: 'base' | 'overlay' | 'terrain';
+  styleUrl?: string;
+  tileUrl?: string;
+  mapType: 'raster' | 'vector';
+  maxZoom?: number;
+  attribution?: string;
+}
+
+interface UseMapLayersControlReturn {
+  layers: LayerConfig[];
+  terrainEnabled: boolean;
+  toggleLayer: (layerId: string) => void;
+  toggleTerrain: () => void;
+  visibleLayers: string[];
+  baseLayer: LayerConfig;
+  viewState: CameraSettings;
+  handleViewStateChange: (newViewState: any) => void;
+  updateViewState: (newSettings: Partial<CameraSettings>) => void;
+}
+
+export const useMapLayersControl = (initialLayers: LayerConfig[]): UseMapLayersControlReturn => {
+  const [layers, setLayers] = useState<LayerConfig[]>(initialLayers);
+  const [terrainEnabled, setTerrainEnabled] = useState(true);
+  const [viewState, setViewState] = useState<CameraSettings>(DEFAULT_CAMERA_SETTINGS);
+
+  const toggleLayer = useCallback((layerId: string) => {
+    setLayers(prev => {
+      const layer = prev.find(l => l.id === layerId);
+      if (layer?.type === 'base') {
+        return prev.map(l => 
+          l.type === 'base' 
+            ? { ...l, visible: l.id === layerId } 
+            : l
+        );
+      }
+      return prev.map(l => 
+        l.id === layerId ? { ...l, visible: !l.visible } : l
+      );
+    });
+  }, []);
+
+  const toggleTerrain = useCallback(() => {
+    setTerrainEnabled(prev => !prev);
+  }, []);
+
+  const handleViewStateChange = useCallback((newViewState: any) => {
+    setViewState(prev => ({
+      ...prev,
+      longitude: newViewState.longitude ?? prev.longitude,
+      latitude: newViewState.latitude ?? prev.latitude,
+      zoom: newViewState.zoom ?? prev.zoom,
+      pitch: newViewState.pitch ?? prev.pitch,
+      bearing: newViewState.bearing ?? prev.bearing
+    }));
+  }, []);
+
+  const updateViewState = useCallback((newSettings: Partial<CameraSettings>) => {
+    setViewState(prev => ({ ...prev, ...newSettings }));
+  }, []);
+
+  const baseLayer = useMemo(() => {
+    return layers.find(l => l.type === 'base' && l.visible) || layers[0];
+  }, [layers]);
+
+  const visibleLayers = useMemo(() => 
+    layers.filter(layer => layer.visible).map(l => l.id), 
+    [layers]
+  );
+
+  return { 
+    layers, 
+    terrainEnabled, 
+    toggleLayer, 
+    toggleTerrain, 
+    visibleLayers, 
+    baseLayer,
+    viewState,
+    handleViewStateChange,
+    updateViewState
+  };
+};
+
+export default useMapLayersControl;
+EOF
+
+cat > src/shared/lib/hooks/useCamera.ts << 'EOF'
+import { useState, useCallback, useRef } from 'react';
+import { CameraSettings, DEFAULT_CAMERA_SETTINGS } from '../../types/camera';
+
+interface UseCameraReturn {
+  /** Текущие настройки камеры */
+  settings: CameraSettings;
+  /** Обновить отдельную настройку */
+  updateSetting: (key: keyof CameraSettings, value: number) => void;
+  /** Обновить несколько настроек */
+  updateSettings: (newSettings: Partial<CameraSettings>) => void;
+  /** Сбросить к настройкам по умолчанию */
+  resetToDefault: () => void;
+  /** Ссылка на карту */
+  mapRef: React.MutableRefObject<any>;
+}
+
+/**
+ * Упрощенный хук для управления настройками камеры
+ * БЕЗ синхронизации с картой
+ */
+export const useCamera = (initialSettings?: Partial<CameraSettings>): UseCameraReturn => {
+  const [settings, setSettings] = useState<CameraSettings>({
+    ...DEFAULT_CAMERA_SETTINGS,
+    ...initialSettings
+  });
+  const mapRef = useRef<any>(null);
+
+  const updateSetting = useCallback((key: keyof CameraSettings, value: number) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const updateSettings = useCallback((newSettings: Partial<CameraSettings>) => {
+    setSettings(prev => ({ ...prev, ...newSettings }));
+  }, []);
+
+  const resetToDefault = useCallback(() => {
+    setSettings(DEFAULT_CAMERA_SETTINGS);
+  }, []);
+
+  return {
+    settings,
+    updateSetting,
+    updateSettings,
+    resetToDefault,
+    mapRef
+  };
+};
+
+export default useCamera;
+EOF
+
+cat > src/shared/lib/hooks/usePalette.ts << 'EOF'
+import { useState, useCallback, useMemo } from 'react';
+import {
+  PALETTE_LIBRARY,
+  DEFAULT_PALETTE,
+  PaletteName,
+  GradientConfig
+} from '../../../entities/palette';
+import { invertPalette } from '../color';
+
+export interface UsePaletteReturn {
+  /** Текущий массив цветов */
+  palette: string[];
+  /** Название выбранной палитры */
+  selectedName: PaletteName | 'custom';
+  /** Пользовательский градиент */
+  customGradient: GradientConfig;
+  /** Выбрать палитру из библиотеки */
+  selectPalette: (name: PaletteName | 'custom') => void;
+  /** Установить цвета палитры (для custom) */
+  setPaletteColors: (colors: string[]) => void;
+  /** Установить пользовательский градиент */
+  setCustomGradient: (gradient: GradientConfig) => void;
+  /** Инвертировать текущую палитру */
+  toggleInvert: () => void;
+  /** Сбросить к палитре по умолчанию */
+  resetToDefault: () => void;
+}
+
+const DEFAULT_GRADIENT: GradientConfig = {
+  startColor: '#d7191c',
+  midColor: '#ffffbf',
+  endColor: '#1a9641'
+};
+
+export const usePalette = (): UsePaletteReturn => {
+  const [selectedName, setSelectedName] = useState<PaletteName | 'custom'>('Красный-Жёлтый-Зелёный (RdYlGn)');
+  const [customGradient, setCustomGradient] = useState<GradientConfig>(DEFAULT_GRADIENT);
+  const [customColors, setCustomColors] = useState<string[]>([
+    DEFAULT_GRADIENT.startColor,
+    DEFAULT_GRADIENT.midColor,
+    DEFAULT_GRADIENT.endColor
+  ]);
+  const [inverted, setInverted] = useState(false);
+
+  // Текущая палитра (вычисляемое значение)
+  const palette = useMemo(() => {
+    let colors: string[];
+    if (selectedName === 'custom') {
+      colors = [...customColors];
+    } else {
+      const base = PALETTE_LIBRARY[selectedName as PaletteName];
+      colors = base && Array.isArray(base) && base.length >= 3 ? [...base] : DEFAULT_PALETTE;
+    }
+    return inverted ? invertPalette(colors) : colors;
+  }, [selectedName, customColors, inverted]);
+
+  const selectPalette = useCallback((name: PaletteName | 'custom') => {
+    setSelectedName(name);
+    setInverted(false); // сбрасываем инвертирование при смене палитры
+  }, []);
+
+  const setPaletteColors = useCallback((colors: string[]) => {
+    if (colors.length >= 3) {
+      setCustomColors(colors.slice(0, 3));
+      setCustomGradient({
+        startColor: colors[0],
+        midColor: colors[1],
+        endColor: colors[2]
+      });
+    }
+  }, []);
+
+  const toggleInvert = useCallback(() => {
+    setInverted(prev => !prev);
+  }, []);
+
+  const resetToDefault = useCallback(() => {
+    setSelectedName('Красный-Жёлтый-Зелёный (RdYlGn)');
+    setCustomGradient(DEFAULT_GRADIENT);
+    setCustomColors([DEFAULT_GRADIENT.startColor, DEFAULT_GRADIENT.midColor, DEFAULT_GRADIENT.endColor]);
+    setInverted(false);
+  }, []);
+
+  return {
+    palette,
+    selectedName,
+    customGradient,
+    selectPalette,
+    setPaletteColors,
+    setCustomGradient,
+    toggleInvert,
+    resetToDefault
+  };
+};
+
+export default usePalette;
+EOF
+
+# --- src/shared/lib/map ---
+mkdir -p src/shared/lib/map
+cat > src/shared/lib/map/buildMapStyle.ts << 'EOF'
+import type { LayerConfig } from '../../types/map';
+
+/**
+ * Построение стиля карты для MapLibre
+ * Теперь только возвращает URL стиля или строит базовый растровый слой.
+ */
+export function buildMapStyle(baseLayer: LayerConfig): any {
+  if (baseLayer.mapType === 'vector' && baseLayer.styleUrl) {
+    return baseLayer.styleUrl;
+  }
+
+  // Для растровых карт строим стиль вручную
+  const style: any = {
+    version: 8,
+    sources: {},
+    layers: []
+  };
+
+  if (baseLayer.tileUrl) {
+    style.sources[baseLayer.id] = {
+      type: 'raster',
+      tiles: [baseLayer.tileUrl],
+      tileSize: 256,
+      attribution: baseLayer.attribution || '© OpenStreetMap',
+      maxzoom: baseLayer.maxZoom || 19
+    };
+
+    style.layers.push({
+      id: `${baseLayer.id}-layer`,
+      type: 'raster',
+      source: baseLayer.id,
+      minzoom: 0,
+      maxzoom: baseLayer.maxZoom || 22
+    });
+  }
+
+  return style;
+}
+EOF
+
+# --- src/shared/lib ---
+cat > src/shared/lib/dragUtils.ts << 'EOF'
+/**
+ * Утилиты для управления классом dragging-active на body
+ * Используется для скрытия скроллов при перетаскивании draggable элементов
+ */
+
+export const onDragStart = () => {
+  document.body.classList.add('dragging-active');
+};
+
+export const onDragStop = () => {
+  document.body.classList.remove('dragging-active');
+};
+
+export const createDragHandlers = () => ({
+  onStart: onDragStart,
+  onStop: onDragStop,
+});
+EOF
+
+# --- src/shared/types ---
+mkdir -p src/shared/types
+
+cat > src/shared/types/camera.ts << 'EOF'
+/**
+ * Типы для настроек камеры карты
+ * Основано на документации MapLibre CameraOptions и deck.gl MapView
+ */
+
+export interface CameraSettings {
+  /** Долгота центра карты (от -180 до 180) */
+  longitude: number;
+  /** Широта центра карты (от -85 до 85) */
+  latitude: number;
+  /** Уровень зума (от 0 до 22) */
+  zoom: number;
+  /** Наклон карты в градусах (от 0 до 85) */
+  pitch: number;
+  /** Поворот карты в градусах (от -180 до 180) */
+  bearing: number;
+}
+
+/**
+ * Настройки камеры по умолчанию для карты России
+ */
+export const DEFAULT_CAMERA_SETTINGS: CameraSettings = {
+  longitude: 95,
+  latitude: 62,
+  zoom: 3,
+  pitch: 0,
+  bearing: 0
+};
+
+/**
+ * Допустимые диапазоны значений для ползунков
+ */
+export const CAMERA_LIMITS = {
+  longitude: { min: -180, max: 180, step: 0.1 },
+  latitude: { min: -85, max: 85, step: 0.1 },
+  zoom: { min: 1, max: 20, step: 0.1 },
+  pitch: { min: 0, max: 85, step: 1 },
+  bearing: { min: -180, max: 180, step: 1 }
+} as const;
+
+/**
+ * Тип для ключей настроек камеры
+ */
+export type CameraSettingKey = keyof CameraSettings;
+EOF
+
+cat > src/shared/types/map.ts << 'EOF'
+export interface LayerConfig {
+  id: string;
+  name: string;
+  visible: boolean;
+  type: 'base' | 'overlay' | 'terrain';
+  styleUrl?: string;
+  tileUrl?: string;
+  mapType: 'raster' | 'vector';
+  maxZoom?: number;
+  attribution?: string;
+}
+EOF
+
+cat > src/shared/types/visualization.ts << 'EOF'
+export type VisualizationMode = 'dynamics' | 'absolute';
+export type DynamicsPeriod = '2002-2010' | '2010-2021' | '2002-2021';
+export type FilterDirection = 'all' | 'growth' | 'decline';
+
+export interface AbsoluteModeConfig {
+    period: DynamicsPeriod;
+    filter: FilterDirection;
+}
+
+export interface DynamicsModeConfig {
+    period: DynamicsPeriod;
+    filter: FilterDirection;
+    showZero: boolean;
+}
+
+export interface VisualizationConfig {
+    mode: VisualizationMode;
+    year: '2002' | '2010' | '2021';
+    absolute: AbsoluteModeConfig;
+    dynamics: DynamicsModeConfig;
+}
+
+export const DEFAULT_VISUALIZATION_CONFIG: VisualizationConfig = {
+    mode: 'dynamics',
+    year: '2021',
+    absolute: {
+        period: '2002-2021',
+        filter: 'all'
+    },
+    dynamics: {
+        period: '2010-2021',
+        filter: 'all',
+        showZero: true
+    }
+};
+
+export interface FilterSettings {
+    populationMin: number;
+    populationMax: number;
+    dynamicsMin: number;
+    dynamicsMax: number;
+    showZeroPopulation: boolean;
+}
+
+export const DEFAULT_FILTER_SETTINGS: FilterSettings = {
+    populationMin: 0,
+    populationMax: 0,
+    dynamicsMin: -100,
+    dynamicsMax: 100,
+    showZeroPopulation: true
+};
+EOF
+
+# --- src/shared/ui/CameraControls ---
+mkdir -p src/shared/ui/CameraControls
+
+cat > src/shared/ui/CameraControls/index.ts << 'EOF'
+export { CameraControls } from './CameraControls';
+EOF
+
+cat > src/shared/ui/CameraControls/CameraControls.tsx << 'EOF'
+import React from 'react';
+import {
+  Box,
+  Typography,
+  Stack,
+  Paper,
+  IconButton,
+  Tooltip,
+  Alert,
+} from '@mui/material';
+import SyncIcon from '@mui/icons-material/Sync';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import CenterFocusWeakIcon from '@mui/icons-material/CenterFocusWeak';
+import NorthIcon from '@mui/icons-material/North';
+import EastIcon from '@mui/icons-material/East';
+import SouthIcon from '@mui/icons-material/South';
+import WestIcon from '@mui/icons-material/West';
+import ThreeDRotationIcon from '@mui/icons-material/ThreeDRotation';
+import { SliderWithInput } from '../SliderWithInput';
+import { CameraSettings, CAMERA_LIMITS, CameraSettingKey } from '../../types/camera';
+
+interface CameraControlsProps {
+  settings: CameraSettings;
+  onSettingChange: (key: CameraSettingKey, value: number) => void;
+  onReset: () => void;
+  onSync: () => void;
+  isSynced?: boolean;
+}
+
+export const CameraControls: React.FC<CameraControlsProps> = ({
+  settings,
+  onSettingChange,
+  onReset,
+  onSync,
+  isSynced = true
+}) => {
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Typography variant="subtitle2" color="primary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CenterFocusWeakIcon fontSize="small" />
+          Детальные настройки вида
+        </Typography>
+        <Box>
+          <Tooltip title="Синхронизировать с картой">
+            <IconButton size="small" onClick={onSync} color={isSynced ? 'success' : 'warning'} sx={{ mr: 0.5 }}>
+              <SyncIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Сбросить к настройкам по умолчанию">
+            <IconButton size="small" onClick={onReset}>
+              <RestartAltIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      </Box>
+
+      {!isSynced && (
+        <Alert severity="warning" size="small" sx={{ mb: 2 }} action={
+          <IconButton color="inherit" size="small" onClick={onSync}>
+            <SyncIcon fontSize="small" />
+          </IconButton>
+        }>
+          Настройки отличаются от карты. Нажмите синхронизацию.
+        </Alert>
+      )}
+
+      <Stack spacing={2}>
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+            Центр карты
+          </Typography>
+          <SliderWithInput
+            label="Долгота"
+            value={settings.longitude}
+            onChange={(val) => onSettingChange('longitude', val)}
+            min={CAMERA_LIMITS.longitude.min}
+            max={CAMERA_LIMITS.longitude.max}
+            step={CAMERA_LIMITS.longitude.step}
+            unit="°"
+          />
+          <SliderWithInput
+            label="Широта"
+            value={settings.latitude}
+            onChange={(val) => onSettingChange('latitude', val)}
+            min={CAMERA_LIMITS.latitude.min}
+            max={CAMERA_LIMITS.latitude.max}
+            step={CAMERA_LIMITS.latitude.step}
+            unit="°"
+          />
+          <SliderWithInput
+            label="Зум"
+            value={settings.zoom}
+            onChange={(val) => onSettingChange('zoom', val)}
+            min={CAMERA_LIMITS.zoom.min}
+            max={CAMERA_LIMITS.zoom.max}
+            step={CAMERA_LIMITS.zoom.step}
+          />
+        </Paper>
+
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+            Углы обзора
+          </Typography>
+          <SliderWithInput
+            label="Наклон (pitch)"
+            value={settings.pitch}
+            onChange={(val) => onSettingChange('pitch', val)}
+            min={CAMERA_LIMITS.pitch.min}
+            max={CAMERA_LIMITS.pitch.max}
+            step={CAMERA_LIMITS.pitch.step}
+            unit="°"
+          />
+          <Box sx={{ mt: 0.5, mb: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">
+              0° = вид сверху, 60°+ = горизонт
+            </Typography>
+          </Box>
+          <SliderWithInput
+            label="Поворот (bearing)"
+            value={settings.bearing}
+            onChange={(val) => onSettingChange('bearing', val)}
+            min={CAMERA_LIMITS.bearing.min}
+            max={CAMERA_LIMITS.bearing.max}
+            step={CAMERA_LIMITS.bearing.step}
+            unit="°"
+          />
+          <Box sx={{ mt: 0.5 }}>
+            <Typography variant="caption" color="text.secondary">
+              0° = север, 90° = восток, -90° = запад
+            </Typography>
+          </Box>
+        </Paper>
+
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+            Быстрые preset'ы
+          </Typography>
+          <Stack direction="row" spacing={1} justifyContent="space-around" sx={{ mb: 2 }}>
+            <Tooltip title="Вид сверху">
+              <IconButton size="small" onClick={() => { onSettingChange('pitch', 0); onSettingChange('bearing', 0); }}>
+                <CenterFocusWeakIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="3D вид (45°)">
+              <IconButton size="small" onClick={() => onSettingChange('pitch', 45)}>
+                <ThreeDRotationIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+          <Stack direction="row" spacing={1} justifyContent="space-around">
+            <Tooltip title="Север"><IconButton size="small" onClick={() => onSettingChange('bearing', 0)}><NorthIcon fontSize="small" /></IconButton></Tooltip>
+            <Tooltip title="Восток"><IconButton size="small" onClick={() => onSettingChange('bearing', 90)}><EastIcon fontSize="small" /></IconButton></Tooltip>
+            <Tooltip title="Юг"><IconButton size="small" onClick={() => onSettingChange('bearing', 180)}><SouthIcon fontSize="small" /></IconButton></Tooltip>
+            <Tooltip title="Запад"><IconButton size="small" onClick={() => onSettingChange('bearing', -90)}><WestIcon fontSize="small" /></IconButton></Tooltip>
+          </Stack>
+        </Paper>
+      </Stack>
+    </Box>
+  );
+};
+EOF
+
+# --- src/shared/ui/GradientPicker ---
+mkdir -p src/shared/ui/GradientPicker
+
+cat > src/shared/ui/GradientPicker/index.ts << 'EOF'
+export { GradientPicker } from './GradientPicker';
+EOF
+
+cat > src/shared/ui/GradientPicker/GradientPicker.tsx << 'EOF'
+import React from 'react';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Stack from '@mui/material/Stack';
+import Paper from '@mui/material/Paper';
+import { HexColorPicker } from 'react-colorful';
+import { GradientConfig } from '../../../entities/palette/lib/types';
+
+interface GradientPickerProps {
+  value: GradientConfig;
+  onChange: (gradient: GradientConfig) => void;
+  title?: string;
+}
+
+export const GradientPicker: React.FC<GradientPickerProps> = ({
+  value,
+  onChange,
+  title = 'Пользовательский градиент'
+}) => {
+  const handleStartChange = (color: string) => {
+    onChange({ ...value, startColor: color });
+  };
+
+  const handleMidChange = (color: string) => {
+    onChange({ ...value, midColor: color });
+  };
+
+  const handleEndChange = (color: string) => {
+    onChange({ ...value, endColor: color });
+  };
+
+  return (
+    <Box sx={{ mt: 2 }}>
+      <Typography variant="subtitle2" gutterBottom>
+        {title}
+      </Typography>
+      <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+        <Paper variant="outlined" sx={{ p: 1, flex: 1 }}>
+          <Typography variant="caption" display="block" align="center" gutterBottom>
+            Убыль (-100%)
+          </Typography>
+          <HexColorPicker 
+            color={value.startColor} 
+            onChange={handleStartChange} 
+            style={{ width: '100%', height: 120 }}
+          />
+        </Paper>
+        <Paper variant="outlined" sx={{ p: 1, flex: 1 }}>
+          <Typography variant="caption" display="block" align="center" gutterBottom>
+            Ноль (0%)
+          </Typography>
+          <HexColorPicker 
+            color={value.midColor} 
+            onChange={handleMidChange} 
+            style={{ width: '100%', height: 120 }}
+          />
+        </Paper>
+        <Paper variant="outlined" sx={{ p: 1, flex: 1 }}>
+          <Typography variant="caption" display="block" align="center" gutterBottom>
+            Рост (+100%)
+          </Typography>
+          <HexColorPicker 
+            color={value.endColor} 
+            onChange={handleEndChange} 
+            style={{ width: '100%', height: 120 }}
+          />
+        </Paper>
+      </Stack>
+      <Paper 
+        variant="outlined" 
+        sx={{ 
+          height: 40, 
+          width: '100%',
+          background: `linear-gradient(90deg, ${value.startColor} 0%, ${value.midColor} 50%, ${value.endColor} 100%)`,
+          borderRadius: 1,
+          mb: 1
+        }} 
+      />
+    </Box>
+  );
+};
+EOF
+
+# --- src/shared/ui/PaletteLibrary ---
+mkdir -p src/shared/ui/PaletteLibrary
+
+cat > src/shared/ui/PaletteLibrary/index.ts << 'EOF'
+export { PaletteLibrary } from './PaletteLibrary';
+EOF
+
+cat > src/shared/ui/PaletteLibrary/PaletteLibrary.tsx << 'EOF'
+import React, { useState } from 'react';
+import {
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Box,
+  Stack,
+  IconButton,
+  Tooltip,
+  Paper,
+  SelectChangeEvent,
+  ListSubheader
+} from '@mui/material';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import { PALETTE_LIBRARY, PaletteName, PALETTE_CATEGORIES } from '../../../entities/palette/lib/constants';
+
+interface PaletteLibraryProps {
+  value: PaletteName | 'custom';
+  onChange: (paletteName: PaletteName | 'custom', colors: string[]) => void;
+  onInvert: () => void;
+  showInvert?: boolean;
+}
+
+const getPreviewColors = (paletteName: PaletteName): string[] => {
+  const colors = PALETTE_LIBRARY[paletteName];
+  if (colors && Array.isArray(colors) && colors.length >= 3) {
+    return colors;
+  }
+  return ['#d7191c', '#ffffbf', '#1a9641'];
+};
+
+export const PaletteLibrary: React.FC<PaletteLibraryProps> = ({
+  value,
+  onChange,
+  onInvert,
+  showInvert = true
+}) => {
+  const [previewPalette, setPreviewPalette] = useState<string[]>(
+    value === 'custom' 
+      ? ['#d7191c', '#ffffbf', '#1a9641'] 
+      : getPreviewColors(value as PaletteName)
+  );
+
+  const handleChange = (event: SelectChangeEvent) => {
+    const selected = event.target.value as PaletteName | 'custom';
+    if (selected === 'custom') {
+      onChange('custom', []);
+      setPreviewPalette(['#d7191c', '#ffffbf', '#1a9641']);
+    } else {
+      const colors = getPreviewColors(selected);
+      setPreviewPalette(colors);
+      onChange(selected, colors);
+    }
+  };
+
+  const handleMouseEnter = (paletteName: PaletteName) => {
+    const colors = getPreviewColors(paletteName);
+    setPreviewPalette(colors);
+  };
+
+  const renderMenuItems = () => {
+    const items = [];
+    items.push(
+      <MenuItem key="custom" value="custom">
+        -- Пользовательская --
+      </MenuItem>
+    );
+    Object.entries(PALETTE_CATEGORIES).forEach(([category, paletteNames]) => {
+      items.push(
+        <ListSubheader key={`header-${category}`} sx={{ bgcolor: 'transparent', fontWeight: 'bold', color: 'primary.main' }}>
+          {category}
+        </ListSubheader>
+      );
+      paletteNames.forEach(paletteName => {
+        const colors = getPreviewColors(paletteName as PaletteName);
+        items.push(
+          <MenuItem 
+            key={paletteName} 
+            value={paletteName}
+            onMouseEnter={() => handleMouseEnter(paletteName as PaletteName)}
+            sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', py: 1 }}
+          >
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', mb: 0.5 }}>
+              <span>{paletteName}</span>
+            </Box>
+            <Box
+              sx={{
+                height: 16,
+                width: '100%',
+                background: `linear-gradient(90deg, ${colors[0]} 0%, ${colors[1]} 50%, ${colors[2]} 100%)`,
+                borderRadius: 1,
+                border: '1px solid #ddd'
+              }}
+            />
+          </MenuItem>
+        );
+      });
+    });
+    return items;
+  };
+
+  const renderPreview = () => {
+    if (value === 'custom') return null;
+    const colors = previewPalette;
+    if (!colors || colors.length < 3) return null;
+    return (
+      <Paper 
+        variant="outlined" 
+        sx={{ 
+          mt: 1, 
+          height: 32, 
+          width: '100%',
+          background: `linear-gradient(90deg, ${colors[0]} 0%, ${colors[1]} 50%, ${colors[2]} 100%)`,
+          borderRadius: 1,
+          border: '1px solid #ccc'
+        }} 
+      />
+    );
+  };
+
+  return (
+    <Box>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <FormControl fullWidth size="small">
+          <InputLabel>Библиотека палитр</InputLabel>
+          <Select
+            value={value}
+            label="Библиотека палитр"
+            onChange={handleChange}
+            MenuProps={{
+              PaperProps: {
+                sx: { maxHeight: 500, width: 350 }
+              }
+            }}
+          >
+            {renderMenuItems()}
+          </Select>
+        </FormControl>
+        {showInvert && (
+          <Tooltip title="Инвертировать палитру">
+            <IconButton onClick={onInvert} size="small">
+              <SwapHorizIcon />
+            </IconButton>
+          </Tooltip>
+        )}
+      </Stack>
+      {renderPreview()}
+    </Box>
+  );
+};
+EOF
+
+# --- src/shared/ui ---
+mkdir -p src/shared/ui
+
+cat > src/shared/ui/index.ts << 'EOF'
+export { SliderWithInput } from './SliderWithInput';
+export { CameraControls } from './CameraControls';
+export { PaletteLibrary } from './PaletteLibrary';
+export { GradientPicker } from './GradientPicker';
+EOF
+
+cat > src/shared/ui/SliderWithInput.tsx << 'EOF'
+import React, { useState, useEffect } from 'react';
+import Box from '@mui/material/Box';
+import Slider from '@mui/material/Slider';
+import Input from '@mui/material/Input';
+import Typography from '@mui/material/Typography';
+import Stack from '@mui/material/Stack';
+import { styled } from '@mui/material/styles';
+
+const StyledInput = styled(Input)`width: 70px;`;
+
+interface SliderWithInputProps {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+  unit?: string;
+  disabled?: boolean;
+}
+
+const SliderWithInputComponent: React.FC<SliderWithInputProps> = ({
+  label, value, onChange, min, max, step = 0.1, unit = '', disabled = false,
+}) => {
+  const [localValue, setLocalValue] = useState<string | number>(value);
+
+  useEffect(() => { setLocalValue(value); }, [value]);
+
+  const handleSliderChange = (_event: Event, newValue: number | number[]) => {
+    const numValue = newValue as number;
+    setLocalValue(numValue);
+    onChange(numValue);
+  };
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = event.target.value;
+    if (newValue === '') { setLocalValue(''); return; }
+    const numValue = Number(newValue);
+    if (!isNaN(numValue)) {
+      setLocalValue(numValue);
+      const clampedValue = Math.min(max, Math.max(min, numValue));
+      onChange(clampedValue);
+    }
+  };
+
+  const handleBlur = () => {
+    let finalValue = localValue === '' ? min : Number(localValue);
+    if (finalValue < min) finalValue = min;
+    if (finalValue > max) finalValue = max;
+    finalValue = Math.round(finalValue / step) * step;
+    setLocalValue(finalValue);
+    onChange(finalValue);
+  };
+
+  return (
+    <Box sx={{ mb: 2 }}>
+      <Typography variant="subtitle2" gutterBottom>{label}</Typography>
+      <Stack direction="row" spacing={2} alignItems="center">
+        <Box sx={{ flex: 1 }}>
+          <Slider value={typeof localValue === 'number' ? localValue : min} onChange={handleSliderChange} min={min} max={max} step={step} valueLabelDisplay="auto" disabled={disabled} />
+        </Box>
+        <StyledInput value={localValue} size="small" onChange={handleInputChange} onBlur={handleBlur} disabled={disabled} inputProps={{ step, min, max, type: 'number' }} endAdornment={unit && <Box component="span" sx={{ ml: 0.5, color: 'text.secondary' }}>{unit}</Box>} />
+      </Stack>
+    </Box>
+  );
+};
+
+// Мемоизация для оптимизации
+export const SliderWithInput = React.memo(SliderWithInputComponent);
+EOF
+
+# --- src/widgets/ControlPanel ---
+mkdir -p src/widgets/ControlPanel/ui
+
+cat > src/widgets/ControlPanel/index.ts << 'EOF'
+export { ControlPanel } from './ui/ControlPanel';
+export type { VisualizationSettings, YearType, LayerConfig } from './ui/ControlPanel';
+EOF
+
+cat > src/widgets/ControlPanel/ui/ControlPanel.tsx << 'EOF'
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import Draggable, { DraggableData, DraggableEvent } from 'react-draggable';
+import {
+  Paper, FormControl, InputLabel, Select, MenuItem, Typography, Box,
+  SelectChangeEvent, RadioGroup, FormControlLabel, Radio, IconButton,
+  Stack, Button, Popover, Divider, FormGroup, Switch, Tooltip, Tabs, Tab,
+  ToggleButton, ToggleButtonGroup
+} from '@mui/material';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import CloseIcon from '@mui/icons-material/Close';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import ColorizeIcon from '@mui/icons-material/Colorize';
+import TerrainIcon from '@mui/icons-material/Terrain';
+import MapIcon from '@mui/icons-material/Map';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import PaletteIcon from '@mui/icons-material/Palette';
+import CenterFocusWeakIcon from '@mui/icons-material/CenterFocusWeak';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import LandscapeIcon from '@mui/icons-material/Landscape';
+import LayersClearIcon from '@mui/icons-material/LayersClear';
+import { HexColorPicker } from 'react-colorful';
+
+import { PaletteLibrary } from '../../../shared/ui/PaletteLibrary';
+import { GradientPicker } from '../../../shared/ui/GradientPicker';
+import { CameraControls } from '../../../shared/ui/CameraControls';
+import { SliderWithInput } from '../../../shared/ui/SliderWithInput';
+import { PaletteName } from '../../../entities/palette/lib/constants';
+import { invertPalette } from '../../../shared/lib/color/utils';
+import { GradientConfig } from '../../../entities/palette/lib/types';
+import { CameraSettings } from '../../../shared/types/camera';
+import { LayerConfig } from '../../../shared/lib/hooks/useMapLayersControl';
+import { FilterSettings } from '../../../shared/types/visualization';
+
+export type YearType = '2002' | '2010' | '2021';
+export type VisualizationMode = 'dynamics' | 'absolute';
+export type DynamicsPeriod = '2002-2010' | '2010-2021' | '2002-2021';
+export type FilterDirection = 'all' | 'growth' | 'decline';
+export type TerrainMode = 'none' | 'hillshade' | '3d';
+
+export interface VisualizationSettings {
+  selectedYear: YearType;
+  minRadius: number;
+  powerCoefficient: number;
+  radiusScale: number;
+  strokeWidth: number;
+  strokeColor: string;
+  fillOpacity: number;
+}
+
+interface ControlPanelProps {
+  settings: VisualizationSettings;
+  onSettingsChange: (newSettings: Partial<VisualizationSettings>) => void;
+  selectedYear: YearType;
+  dynamicsMode: DynamicsPeriod;
+  onDynamicsModeChange: (mode: DynamicsPeriod) => void;
+  mode: VisualizationMode;
+  onModeChange: (mode: VisualizationMode) => void;
+  absolutePeriod: DynamicsPeriod;
+  onAbsolutePeriodChange: (period: DynamicsPeriod) => void;
+  absoluteFilter: FilterDirection;
+  onAbsoluteFilterChange: (filter: FilterDirection) => void;
+  currentPalette: string[];
+  selectedPaletteName: PaletteName | 'custom';
+  customGradient: GradientConfig;
+  onPaletteChange: (palette: string[]) => void;
+  onPaletteNameChange: (name: PaletteName | 'custom') => void;
+  onCustomGradientChange: (gradient: GradientConfig) => void;
+  onInvert?: () => void;
+  layers: LayerConfig[];
+  terrainEnabled: boolean;
+  onToggleLayer: (layerId: string) => void;
+  onToggleTerrain: () => void;
+  cameraSettings: CameraSettings;
+  onCameraChange: (key: keyof CameraSettings, value: number) => void;
+  onCameraReset: () => void;
+  onCameraSync: () => void;
+  isCameraSynced: boolean;
+  isVisible: boolean;
+  onVisibilityChange: (visible: boolean) => void;
+  filterSettings: FilterSettings;
+  onFilterChange: (newFilter: Partial<FilterSettings>) => void;
+  populationMin: number;
+  populationMax: number;
+  dynamicsMin: number;
+  dynamicsMax: number;
+  terrainMode: TerrainMode;
+  onTerrainModeChange: (mode: TerrainMode) => void;
+}
+
+const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
+  const {
+    settings, onSettingsChange, selectedYear, dynamicsMode, onDynamicsModeChange,
+    mode, onModeChange, absolutePeriod, onAbsolutePeriodChange, absoluteFilter, onAbsoluteFilterChange,
+    currentPalette, selectedPaletteName, customGradient, onPaletteChange, onPaletteNameChange, onCustomGradientChange,
+    onInvert,
+    layers, terrainEnabled, onToggleLayer, onToggleTerrain,
+    cameraSettings, onCameraChange, onCameraReset, onCameraSync, isCameraSynced,
+    isVisible, onVisibilityChange, filterSettings, onFilterChange,
+    populationMin, populationMax, dynamicsMin, dynamicsMax,
+    terrainMode, onTerrainModeChange
+  } = props;
+
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x: 20, y: 20 });
+  const [bounds, setBounds] = useState({ left: 0, top: 0, right: 0, bottom: 0 });
+  const [colorPickerAnchor, setColorPickerAnchor] = useState<null | HTMLElement>(null);
+  const [activeTab, setActiveTab] = useState(0);
+
+  useEffect(() => {
+    if (nodeRef.current) {
+      const updateBounds = () => {
+        const node = nodeRef.current;
+        if (node) {
+          const { clientWidth, clientHeight } = document.documentElement;
+          const nodeWidth = node.offsetWidth;
+          const nodeHeight = node.offsetHeight;
+          setBounds({ left: 0, top: 0, right: clientWidth - nodeWidth, bottom: clientHeight - nodeHeight });
+        }
+      };
+      updateBounds();
+      window.addEventListener('resize', updateBounds);
+      return () => window.removeEventListener('resize', updateBounds);
+    }
+  }, [isVisible]);
+
+  const handleDrag = useCallback((_e: DraggableEvent, data: DraggableData) => setPosition({ x: data.x, y: data.y }), []);
+  const handleStop = useCallback((_e: DraggableEvent, data: DraggableData) => setPosition({ x: data.x, y: data.y }), []);
+
+  const handleYearChange = (event: SelectChangeEvent) => onSettingsChange({ selectedYear: event.target.value as YearType });
+  const handleDynamicsModeChange = (event: React.ChangeEvent<HTMLInputElement>) => onDynamicsModeChange(event.target.value as DynamicsPeriod);
+  const handleModeChange = (event: React.ChangeEvent<HTMLInputElement>) => onModeChange(event.target.value as VisualizationMode);
+  const handleAbsolutePeriodChange = (event: React.ChangeEvent<HTMLInputElement>) => onAbsolutePeriodChange(event.target.value as DynamicsPeriod);
+  const handleAbsoluteFilterChange = (event: React.ChangeEvent<HTMLInputElement>) => onAbsoluteFilterChange(event.target.value as FilterDirection);
+  const toggleVisibility = () => onVisibilityChange(!isVisible);
+  const openColorPicker = (event: React.MouseEvent<HTMLElement>) => setColorPickerAnchor(event.currentTarget);
+  const closeColorPicker = () => setColorPickerAnchor(null);
+  const handleColorChange = (color: string) => onSettingsChange({ strokeColor: color });
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => setActiveTab(newValue);
+  const handleTerrainModeChange = (_event: React.MouseEvent<HTMLElement>, newMode: TerrainMode | null) => { if (newMode) onTerrainModeChange(newMode); };
+
+  const baseLayers = layers.filter(l => l.type === 'base');
+
+  if (!isVisible) {
+    return (
+      <Draggable nodeRef={nodeRef} handle=".drag-handle" bounds={bounds} position={position} onDrag={handleDrag} onStop={handleStop}>
+        <div ref={nodeRef} style={{ position: 'absolute', zIndex: 1300 }}>
+          <Paper className="control-panel-mini drag-handle" sx={{ p: 1, borderRadius: 2, boxShadow: 3, cursor: 'move', backgroundColor: 'rgba(255,255,255,0.9)' }}>
+            <IconButton size="small" onClick={toggleVisibility} title="Показать панель (Alt)"><OpenInNewIcon fontSize="small" /></IconButton>
+          </Paper>
+        </div>
+      </Draggable>
+    );
+  }
+
+  return (
+    <Draggable nodeRef={nodeRef} handle=".drag-handle" bounds={bounds} position={position} onDrag={handleDrag} onStop={handleStop}>
+      <div ref={nodeRef} style={{ position: 'absolute', zIndex: 1300 }}>
+        <Paper sx={{ p: 3, width: 600, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', backgroundColor: 'rgba(255,255,255,0.98)', borderRadius: 2, boxShadow: 3 }}>
+          <Box className="drag-handle" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, cursor: 'move', borderBottom: '1px solid #e0e0e0', pb: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <DragIndicatorIcon fontSize="small" color="action" />
+              <Typography variant="h6">Настройки карты</Typography>
+            </Box>
+            <IconButton size="small" onClick={toggleVisibility} title="Скрыть панель (Alt)"><CloseIcon fontSize="small" /></IconButton>
+          </Box>
+
+          <Tabs value={activeTab} onChange={handleTabChange} sx={{ mb: 2 }} variant="fullWidth">
+            <Tab icon={<ColorizeIcon fontSize="small" />} label="Визуализация" />
+            <Tab icon={<MapIcon fontSize="small" />} label="Слои" />
+            <Tab icon={<PaletteIcon fontSize="small" />} label="Палитры" />
+            <Tab icon={<CenterFocusWeakIcon fontSize="small" />} label="Вид" />
+            <Tab icon={<FilterListIcon fontSize="small" />} label="Фильтры" />
+          </Tabs>
+
+          {activeTab === 0 && (
+            <Stack spacing={2}>
+              <Box><Typography variant="subtitle2" color="primary" gutterBottom>Режим отображения</Typography>
+                <RadioGroup value={mode} onChange={handleModeChange} row>
+                  <FormControlLabel value="dynamics" control={<Radio size="small" />} label="Динамика (%)" />
+                  <FormControlLabel value="absolute" control={<Radio size="small" />} label="Абсолютный прирост/убыль" />
+                </RadioGroup>
+              </Box>
+
+              {mode === 'absolute' && (
+                <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                  <Typography variant="subtitle2" gutterBottom>Период</Typography>
+                  <RadioGroup value={absolutePeriod} onChange={handleAbsolutePeriodChange}>
+                    <FormControlLabel value="2002-2010" control={<Radio size="small" />} label="2002 → 2010" />
+                    <FormControlLabel value="2010-2021" control={<Radio size="small" />} label="2010 → 2021" />
+                    <FormControlLabel value="2002-2021" control={<Radio size="small" />} label="2002 → 2021" />
+                  </RadioGroup>
+                  <Typography variant="subtitle2" gutterBottom sx={{ mt: 2 }}>Показывать</Typography>
+                  <RadioGroup value={absoluteFilter} onChange={handleAbsoluteFilterChange}>
+                    <FormControlLabel value="all" control={<Radio size="small" />} label="Все изменения" />
+                    <FormControlLabel value="growth" control={<Radio size="small" />} label="Только прирост" />
+                    <FormControlLabel value="decline" control={<Radio size="small" />} label="Только убыль" />
+                  </RadioGroup>
+                </Box>
+              )}
+
+              <FormControl fullWidth size="small">
+                <InputLabel>Год переписи</InputLabel>
+                <Select value={selectedYear} label="Год переписи" onChange={handleYearChange}>
+                  <MenuItem value="2002">2002</MenuItem><MenuItem value="2010">2010</MenuItem><MenuItem value="2021">2021</MenuItem>
+                </Select>
+              </FormControl>
+
+              {selectedYear === '2021' && mode === 'dynamics' && (
+                <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                  <Typography variant="subtitle2" gutterBottom>Режим динамики</Typography>
+                  <RadioGroup value={dynamicsMode} onChange={handleDynamicsModeChange}>
+                    <FormControlLabel value="2010-2021" control={<Radio size="small" />} label="Динамика 2010 → 2021" />
+                    <FormControlLabel value="2002-2021" control={<Radio size="small" />} label="Динамика 2002 → 2021" />
+                  </RadioGroup>
+                </Box>
+              )}
+
+              {(selectedYear === '2002' && mode === 'dynamics') && <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}><Typography variant="body2" color="text.secondary">Для 2002 года используется нейтральный цвет</Typography></Box>}
+              {(selectedYear === '2010' && mode === 'dynamics') && <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}><Typography variant="body2" color="text.secondary">Цвет показывает динамику 2002 → 2010</Typography></Box>}
+
+              <Divider sx={{ my: 1 }} />
+              <Typography variant="subtitle2" color="primary">Размер точек</Typography>
+              <SliderWithInput label="Минимальный размер (px)" value={settings.minRadius} onChange={(val) => onSettingsChange({ minRadius: val })} min={0} max={20} step={0.5} unit="px" />
+              <SliderWithInput label="Степенной коэффициент" value={settings.powerCoefficient} onChange={(val) => onSettingsChange({ powerCoefficient: val })} min={0} max={1} step={0.01} />
+              <SliderWithInput label="Масштаб" value={settings.radiusScale} onChange={(val) => onSettingsChange({ radiusScale: val })} min={0.5} max={500} step={0.5} />
+
+              <Divider sx={{ my: 1 }} />
+              <Typography variant="subtitle2" color="primary">Обводка точек</Typography>
+              <SliderWithInput label="Толщина обводки (px)" value={settings.strokeWidth} onChange={(val) => onSettingsChange({ strokeWidth: val })} min={0} max={5} step={0.1} unit="px" />
+
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>Цвет обводки</Typography>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Box sx={{ width: 36, height: 36, borderRadius: 1, bgcolor: settings.strokeColor, border: '2px solid', borderColor: 'grey.300', cursor: 'pointer' }} onClick={openColorPicker} />
+                  <Button size="small" startIcon={<ColorizeIcon />} onClick={openColorPicker}>Выбрать цвет</Button>
+                </Stack>
+                <Popover open={Boolean(colorPickerAnchor)} anchorEl={colorPickerAnchor} onClose={closeColorPicker} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
+                  <Box sx={{ p: 2 }}><HexColorPicker color={settings.strokeColor} onChange={handleColorChange} /></Box>
+                </Popover>
+              </Box>
+
+              <Divider sx={{ my: 1 }} />
+              <Typography variant="subtitle2" color="primary">Прозрачность точек</Typography>
+              <SliderWithInput
+                label="Прозрачность"
+                value={settings.fillOpacity ?? 0.78}
+                onChange={(val) => onSettingsChange({ fillOpacity: val })}
+                min={0}
+                max={1}
+                step={0.01}
+              />
+            </Stack>
+          )}
+
+          {activeTab === 1 && (
+            <Stack spacing={2}>
+              <Typography variant="subtitle2" color="primary">Слои карты</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -1 }}>Базовая карта</Typography>
+              <FormGroup>
+                {baseLayers.map(layer => (
+                  <FormControlLabel key={layer.id} control={<Switch size="small" checked={layer.visible} onChange={() => onToggleLayer(layer.id)} color="primary" />} label={<Box sx={{ display: 'flex', alignItems: 'center' }}>{layer.name}<Tooltip title={layer.visible ? "Видимый" : "Скрыт"}><IconButton size="small" sx={{ ml: 0.5 }}>{layer.visible ? <VisibilityIcon fontSize="small" color="action" /> : <VisibilityOffIcon fontSize="small" color="disabled" />}</IconButton></Tooltip></Box>} />
+                ))}
+              </FormGroup>
+              <Divider sx={{ my: 1 }} />
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2" color="primary" gutterBottom>Режим рельефа</Typography>
+                <ToggleButtonGroup value={terrainMode} exclusive onChange={handleTerrainModeChange} size="small" fullWidth sx={{ mt: 1 }}>
+                  <ToggleButton value="none"><Tooltip title="Без рельефа"><Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><LayersClearIcon fontSize="small" /><Typography variant="body2">Нет</Typography></Box></Tooltip></ToggleButton>
+                  <ToggleButton value="hillshade"><Tooltip title="Тени (2D)"><Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><LandscapeIcon fontSize="small" /><Typography variant="body2">Тени</Typography></Box></Tooltip></ToggleButton>
+                  <ToggleButton value="3d"><Tooltip title="3D рельеф"><Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><TerrainIcon fontSize="small" /><Typography variant="body2">3D</Typography></Box></Tooltip></ToggleButton>
+                </ToggleButtonGroup>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                  {terrainMode === 'none' && 'Плоская карта, без эффектов рельефа'}
+                  {terrainMode === 'hillshade' && '2D-тени на основе высот'}
+                  {terrainMode === '3d' && 'Настоящий 3D рельеф'}
+                </Typography>
+              </Box>
+            </Stack>
+          )}
+
+          {activeTab === 2 && (
+            <Stack spacing={3}>
+              <Box><Typography variant="subtitle2" color="primary" gutterBottom>Библиотека палитр</Typography>
+                <PaletteLibrary 
+                  value={selectedPaletteName} 
+                  onChange={(name, colors) => { 
+                    onPaletteNameChange(name); 
+                    if (name !== 'custom' && colors.length > 0) onPaletteChange(colors); 
+                  }} 
+                  onInvert={() => {
+                    if (onInvert) {
+                      onInvert();
+                    }
+                  }} 
+                  showInvert={true} 
+                />
+              </Box>
+              {selectedPaletteName === 'custom' && (
+                <Box><Typography variant="subtitle2" color="primary" gutterBottom>Пользовательский градиент</Typography>
+                  <GradientPicker value={customGradient} onChange={(gradient) => { onCustomGradientChange(gradient); onPaletteChange([gradient.startColor, gradient.midColor, gradient.endColor]); }} />
+                </Box>
+              )}
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>Текущая палитра</Typography>
+                <Paper variant="outlined" sx={{ height: 40, width: '100%', background: `linear-gradient(90deg, ${currentPalette[0]} 0%, ${currentPalette[1]} 50%, ${currentPalette[2]} 100%)`, borderRadius: 1, border: '1px solid', borderColor: 'grey.300' }} />
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                  <Typography variant="caption" color="error.main">Убыль (-100%)</Typography>
+                  <Typography variant="caption" color="text.secondary">0%</Typography>
+                  <Typography variant="caption" color="success.main">Рост (+100%)</Typography>
+                </Box>
+              </Box>
+            </Stack>
+          )}
+
+          {activeTab === 3 && (
+            <CameraControls settings={cameraSettings} onSettingChange={onCameraChange} onReset={onCameraReset} onSync={onCameraSync} isSynced={isCameraSynced} />
+          )}
+
+          {activeTab === 4 && (
+            <Stack spacing={2}>
+              <Typography variant="subtitle2" color="primary">Фильтр по населению</Typography>
+              <SliderWithInput label="Минимум" value={filterSettings.populationMin} onChange={(val) => onFilterChange({ populationMin: val })} min={0} max={populationMax} step={Math.ceil(populationMax / 100)} unit="чел." />
+              <SliderWithInput label="Максимум" value={filterSettings.populationMax} onChange={(val) => onFilterChange({ populationMax: val })} min={0} max={populationMax} step={Math.ceil(populationMax / 100)} unit="чел." />
+              <FormControlLabel control={<Switch size="small" checked={filterSettings.showZeroPopulation} onChange={(e) => onFilterChange({ showZeroPopulation: e.target.checked })} />} label="Показывать н.п. с нулевым населением" />
+              <Divider sx={{ my: 1 }} />
+              <Typography variant="subtitle2" color="primary">Фильтр по динамике (%)</Typography>
+              <SliderWithInput label="Мин. динамика" value={filterSettings.dynamicsMin} onChange={(val) => onFilterChange({ dynamicsMin: val })} min={dynamicsMin} max={dynamicsMax} step={1} unit="%" />
+              <SliderWithInput label="Макс. динамика" value={filterSettings.dynamicsMax} onChange={(val) => onFilterChange({ dynamicsMax: val })} min={dynamicsMin} max={dynamicsMax} step={1} unit="%" />
+            </Stack>
+          )}
+        </Paper>
+      </div>
+    </Draggable>
+  );
+};
+
+export const ControlPanel = React.memo(ControlPanelComponent);
+export default ControlPanel;
+EOF
+
+# --- src/widgets/LayersControl ---
+mkdir -p src/widgets/LayersControl/ui
+
+cat > src/widgets/LayersControl/index.ts << 'EOF'
+export { LayersControl } from './ui/LayersControl';
+EOF
+
+cat > src/widgets/LayersControl/ui/LayersControl.tsx << 'EOF'
+import React, { memo } from 'react';
+import { Paper, Typography, FormGroup, FormControlLabel, Switch, Divider, Box, IconButton, Tooltip } from '@mui/material';
+import TerrainIcon from '@mui/icons-material/Terrain';
+import MapIcon from '@mui/icons-material/Map';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+
+interface LayerConfig {
+  id: string;
+  name: string;
+  visible: boolean;
+  type: 'base' | 'overlay' | 'terrain';
+}
+
+interface LayersControlProps {
+  layers: LayerConfig[];
+  terrainEnabled: boolean;
+  onToggleLayer: (layerId: string) => void;
+  onToggleTerrain: () => void;
+}
+
+export const LayersControl: React.FC<LayersControlProps> = ({ layers, terrainEnabled, onToggleLayer, onToggleTerrain }) => {
+  const baseLayers = layers.filter(l => l.type === 'base');
+
+  return (
+    <Paper sx={{ position: 'absolute', top: 20, right: 20, zIndex: 1000, p: 2, width: 250, backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: 2, boxShadow: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+        <MapIcon sx={{ mr: 1, color: 'primary.main' }} />
+        <Typography variant="subtitle1" fontWeight={600}>Слои карты</Typography>
+      </Box>
+      <Divider sx={{ my: 1 }} />
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Базовая карта</Typography>
+      <FormGroup>
+        {baseLayers.map(layer => (
+          <FormControlLabel key={layer.id} control={<Switch size="small" checked={layer.visible} onChange={() => onToggleLayer(layer.id)} color="primary" />} label={<Box sx={{ display: 'flex', alignItems: 'center' }}>{layer.name}<Tooltip title={layer.visible ? "Видимый" : "Скрыт"}><IconButton size="small" sx={{ ml: 0.5 }}>{layer.visible ? <VisibilityIcon fontSize="small" color="action" /> : <VisibilityOffIcon fontSize="small" color="disabled" />}</IconButton></Tooltip></Box>} />
+        ))}
+      </FormGroup>
+      <Divider sx={{ my: 1.5 }} />
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <TerrainIcon sx={{ mr: 1, color: terrainEnabled ? 'success.main' : 'action.disabled' }} />
+          <Typography variant="body2">Тени рельефа</Typography>
+        </Box>
+        <Switch size="small" checked={terrainEnabled} onChange={onToggleTerrain} color="success" />
+      </Box>
+    </Paper>
+  );
+};
+EOF
+
+# --- src/widgets/Map ---
+mkdir -p src/widgets/Map/lib
+mkdir -p src/widgets/Map/ui
+
+cat > src/widgets/Map/index.ts << 'EOF'
+export { MapWidget } from './ui/MapWidget';
+EOF
+
+cat > src/widgets/Map/lib/HillshadeDem.tsx << 'EOF'
+import { Layer, Source } from 'react-map-gl/maplibre';
+
+export const HillshadeDem = () => {
+  return (
+    <Source
+      id="hillshade-dem"
+      type="raster-dem"
+      tiles={['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png']}
+      tileSize={256}
+      encoding="terrarium"
+    >
+      <Layer
+        id="hillshade-layer"
+        type="hillshade"
+        paint={{
+          "hillshade-illumination-direction": 315,
+          "hillshade-exaggeration": 0.5,
+          "hillshade-shadow-color": "#473B24",
+          "hillshade-highlight-color": "#FFFFFF",
+        }}
+      />
+    </Source>
+  );
+};
+EOF
+
+cat > src/widgets/Map/lib/TerrainDem.tsx << 'EOF'
+import { Source } from 'react-map-gl/maplibre';
+
+export const TerrainDem = () => {
+  return (
+    <Source
+      id="terrain-dem"
+      type="raster-dem"
+      tiles={['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png']}
+      tileSize={256}
+      minzoom={0}
+      maxzoom={12}
+      attribution="Terrain Tiles from AWS"
+      encoding="terrarium"
+    />
+  );
+};
+EOF
+
+cat > src/widgets/Map/ui/MapWidget.tsx << 'EOF'
+import React, { forwardRef, useEffect } from 'react';
+import Map, { MapRef, useControl } from 'react-map-gl/maplibre';
+import { MapboxOverlay } from '@deck.gl/mapbox';
+import type { MapboxOverlayProps } from '@deck.gl/mapbox';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import type { Layer } from '@deck.gl/core';
+import type { LayerConfig } from '../../../shared/types/map';
+import { NavigationControl } from 'react-map-gl/maplibre';
+import { buildMapStyle } from '../../../shared/lib/map/buildMapStyle';
+import { TerrainDem } from '../lib/TerrainDem';
+import { HillshadeDem } from '../lib/HillshadeDem';
+
+export type TerrainMode = 'none' | 'hillshade' | '3d';
+
+interface MapWidgetProps {
+  layers: Layer[];
+  getTooltip?: (info: any) => any;
+  viewState?: {
+    longitude: number;
+    latitude: number;
+    zoom: number;
+    pitch?: number;
+    bearing?: number;
+  };
+  initialViewState?: {
+    longitude: number;
+    latitude: number;
+    zoom: number;
+    pitch?: number;
+    bearing?: number;
+  };
+  baseLayer: LayerConfig;
+  terrainMode: TerrainMode;
+  onViewStateChange?: (viewState: any) => void;
+}
+
+function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
+  const overlay = useControl<MapboxOverlay>(
+    () => new MapboxOverlay({ ...props, interleaved: true }),
+  );
+  overlay.setProps(props);
+  return null;
+}
+
+export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
+  layers,
+  getTooltip,
+  viewState,
+  initialViewState,
+  baseLayer,
+  terrainMode,
+  onViewStateChange,
+}, ref) => {
+  const mapStyle = React.useMemo(() => buildMapStyle(baseLayer), [baseLayer]);
+  const terrainProps = terrainMode === '3d' ? { source: 'terrain-dem', exaggeration: 1.5 } : undefined;
+
+  useEffect(() => {
+    console.info(`🌍 Режим рельефа: ${terrainMode}`);
+  }, [terrainMode]);
+
+  return (
+    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+      <Map
+        ref={ref}
+        mapStyle={mapStyle}
+        {...(viewState ? viewState : {})}
+        initialViewState={!viewState ? initialViewState : undefined}
+        onMove={onViewStateChange ? (evt) => onViewStateChange(evt.viewState) : undefined}
+        maxPitch={85}
+        // Исправляем ошибку типа: attributionControl ожидает объект или false
+        attributionControl={false}
+        maxTileCacheSize={200}
+        maxTileCacheZoomLevels={8}
+        validateStyle={process.env.NODE_ENV === "production" ? false : undefined}
+        onLoad={() => console.log('✅ MapLibre карта загружена')}
+        onError={(e) => console.error('❌ Ошибка MapLibre:', e)}
+        style={{ width: '100%', height: '100%' }}
+        terrain={terrainProps}
+      >
+        <TerrainDem />
+        {terrainMode === 'hillshade' && <HillshadeDem />}
+        <NavigationControl position="top-right" />
+        <DeckGLOverlay
+          layers={layers}
+          getTooltip={getTooltip}
+          interleaved
+        />
+      </Map>
+    </div>
+  );
+});
+
+MapWidget.displayName = 'MapWidget';
+export default MapWidget;
+EOF
+
+# --- src/index.tsx, App.tsx, global.css, index.css, env.d.ts ---
+cat > src/index.tsx << 'EOF'
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css';
+
+const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+EOF
+
+cat > src/App.tsx << 'EOF'
+import React from 'react';
+import { MapPage } from './pages/MapPage';
+
+function App() {
+  return (
+    <div style={{ 
+      width: '100%', 
+      height: '100%',
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0
+    }}>
+      <MapPage />
+    </div>
+  );
+}
+
+export default App;
+EOF
+
+cat > src/global.css << 'EOF'
+@import 'tailwindcss';
+@plugin "@iconify/tailwind4";
+EOF
+
+cat > src/index.css << 'EOF'
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* Высокий z-index для всех draggable элементов */
+.react-draggable,
+.react-draggable-dragging,
+.rnd-container,
+[data-rnd] {
+  z-index: 1300 !important;
+}
+
+.control-panel-mini {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  cursor: move;
+  transition: all 0.2s;
+  z-index: 1300;
+}
+.control-panel-mini:hover {
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  transform: scale(1.05);
+}
+EOF
+
+cat > src/env.d.ts << 'EOF'
+/// <reference types="@rsbuild/core/types" />
+EOF
+
+# --- Завершение ---
+echo ""
+echo "=================================================="
+echo "✅ Восстановление проекта завершено!"
+echo "=================================================="
+echo ""
+echo "📁 Все файлы созданы. Теперь выполните:"
+echo ""
+echo "   pnpm install"
+echo "   pnpm dev"
+echo ""
+echo "🔄 Если нужно добавить чекбокс 'Ограничивать размер при зуме' (limitPointSize),"
+echo "   запустите дополнительный скрипт add_limit_checkbox.sh (можно взять из предыдущих сообщений)."
+echo ""
+echo "🎉 Удачи!"
