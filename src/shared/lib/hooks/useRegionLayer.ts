@@ -1,6 +1,6 @@
 /**
- * Хук для слоя границ регионов с защитой от повторной инициализации
- * и корректной обработкой видимости.
+ * Хук для слоя границ регионов с корректной обработкой глубины
+ * для правильного наложения на точки.
  */
 
 import { useMemo } from 'react';
@@ -34,22 +34,29 @@ export const useRegionLayer = (
       getLineWidth: config.width,
       lineWidthUnits: 'pixels',
       opacity: config.opacity,
-      // Видимость управляется напрямую, без updateTriggers
+      // Видимость управляется напрямую
       visible: config.visible,
-      pickable: false,          // для кликов пока не нужно
+      pickable: false,
       autoHighlight: false,
       highlightColor: [0, 0, 0, 0],
-      // updateTriggers только для тех пропсов, которые могут меняться без пересоздания слоя
+      
+      // КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: параметры для корректного наложения
+      parameters: {
+        // depthMask: false предотвращает запись в Z-буфер, позволяя
+        // другим слоям (точкам) рисоваться поверх/под линиями правильно
+        depthMask: false,
+        // depthTest оставляем включённым, но т.к. depthMask = false,
+        // линии не будут "забивать" собой точки в Z-буфере
+        depthTest: true
+      },
+      
       updateTriggers: {
         getLineColor: [config.color],
         getLineWidth: [config.width],
         opacity: [config.opacity],
-        // visible не включаем – он управляется напрямую
       },
       lineWidthMinPixels: 0.5,
       lineWidthMaxPixels: 10,
     });
   }, [regionsData, config.visible, config.color, config.width, config.opacity]);
-  // Зависимость от visible добавлена, чтобы слой пересоздавался при его изменении
-  // (так надёжнее, чем полагаться на внутренний механизм deck.gl)
 };

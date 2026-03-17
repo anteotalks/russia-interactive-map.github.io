@@ -4,7 +4,7 @@
  * ОСОБЕННОСТИ:
  * - Автоматически подстраивается под размер контейнера (ResizeObserver)
  * - Корректно работает при изменении размеров окна и повороте устройства
- * - Не создаёт жёлтых обводок и лишних подсветок
+ * - Гарантирует, что все слои deck.gl рендерятся в одном контексте
  */
 
 import React, { forwardRef, useEffect, useRef, useCallback } from 'react';
@@ -44,8 +44,12 @@ interface MapWidgetProps {
 }
 
 function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
+  // Убеждаемся, что overlay всегда использует interleaved: true
   const overlay = useControl<MapboxOverlay>(
-    () => new MapboxOverlay({ ...props, interleaved: true }),
+    () => new MapboxOverlay({ 
+      ...props, 
+      interleaved: true  // Всегда interleaved для одного контекста
+    }),
   );
   overlay.setProps(props);
   return null;
@@ -169,7 +173,7 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
         <DeckGLOverlay
           layers={layers}
           getTooltip={getTooltip}
-          interleaved
+          interleaved={true}
         />
       </Map>
     </div>
