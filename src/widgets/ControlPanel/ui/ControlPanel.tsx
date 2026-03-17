@@ -205,14 +205,19 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                 </Box>
               )}
 
-              <FormControl fullWidth size="small">
-                <InputLabel>Год переписи</InputLabel>
-                <Select value={selectedYear} label="Год переписи" onChange={handleYearChange}>
-                  <MenuItem value="2002">2002</MenuItem><MenuItem value="2010">2010</MenuItem><MenuItem value="2021">2021</MenuItem>
-                </Select>
-              </FormControl>
+              {/* Показываем выбор года ТОЛЬКО в режиме динамики */}
+              {mode === 'dynamics' && (
+                <FormControl fullWidth size="small">
+                  <InputLabel>Год переписи</InputLabel>
+                  <Select value={selectedYear} label="Год переписи" onChange={handleYearChange}>
+                    <MenuItem value="2002">2002</MenuItem>
+                    <MenuItem value="2010">2010</MenuItem>
+                    <MenuItem value="2021">2021</MenuItem>
+                  </Select>
+                </FormControl>
+              )}
 
-              {selectedYear === '2021' && mode === 'dynamics' && (
+              {mode === 'dynamics' && selectedYear === '2021' && (
                 <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
                   <Typography variant="subtitle2" gutterBottom>Режим динамики</Typography>
                   <RadioGroup value={dynamicsMode} onChange={handleDynamicsModeChange}>
@@ -222,8 +227,17 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                 </Box>
               )}
 
-              {(selectedYear === '2002' && mode === 'dynamics') && <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}><Typography variant="body2" color="text.secondary">Для 2002 года используется нейтральный цвет</Typography></Box>}
-              {(selectedYear === '2010' && mode === 'dynamics') && <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}><Typography variant="body2" color="text.secondary">Цвет показывает динамику 2002 → 2010</Typography></Box>}
+              {mode === 'dynamics' && selectedYear === '2002' && (
+                <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Для 2002 года используется нейтральный цвет</Typography>
+                </Box>
+              )}
+              
+              {mode === 'dynamics' && selectedYear === '2010' && (
+                <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Цвет показывает динамику 2002 → 2010</Typography>
+                </Box>
+              )}
 
               <Divider sx={{ my: 1 }} />
               <Typography variant="subtitle2" color="primary">Размер точек</Typography>

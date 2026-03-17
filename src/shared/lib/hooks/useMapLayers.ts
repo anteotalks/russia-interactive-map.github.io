@@ -1,5 +1,6 @@
 /**
  * Хук для слоя точек с отключённой подсветкой
+ * Добавлен фильтр по направлению изменения (growth/decline) для абсолютного режима
  */
 
 import { useMemo, useCallback } from 'react';
@@ -14,6 +15,7 @@ import {
   getNeutralColor,
   hexToRgb
 } from '../color/utils';
+import { FilterDirection } from '../../../shared/types/visualization';
 
 interface LayerSettings {
   selectedYear: '2002' | '2010' | '2021';
@@ -31,6 +33,7 @@ interface LayerSettings {
   dynamicsMin: number;
   dynamicsMax: number;
   showZeroPopulation: boolean;
+  absoluteFilter: FilterDirection;  // новое поле
 }
 
 export const useMapLayers = (
@@ -107,22 +110,27 @@ export const useMapLayers = (
     return settings.strokeWidth;
   }, [settings.strokeWidth]);
 
-  const getFilterValue = useCallback((d: Location): [number, number] => {
+  // Возвращаем три значения: население, динамика (%), знак изменения
+  const getFilterValue = useCallback((d: Location): [number, number, number] => {
     const pop = d[`population_${settings.selectedYear}`] || 0;
 
     let dynamicsPercent = 0;
+    let sign = 0;
     const pop2002 = d.population_2002;
     const pop2010 = d.population_2010;
     const pop2021 = d.population_2021;
 
     if (settings.mode === 'absolute') {
+      let change = 0;
       if (settings.absolutePeriod === '2002-2010') {
-        if (pop2002 > 0) dynamicsPercent = ((pop2010 - pop2002) / pop2002) * 100;
+        if (pop2002 > 0) change = pop2010 - pop2002;
       } else if (settings.absolutePeriod === '2010-2021') {
-        if (pop2010 > 0) dynamicsPercent = ((pop2021 - pop2010) / pop2010) * 100;
+        if (pop2010 > 0) change = pop2021 - pop2010;
       } else {
-        if (pop2002 > 0) dynamicsPercent = ((pop2021 - pop2002) / pop2002) * 100;
+        if (pop2002 > 0) change = pop2021 - pop2002;
       }
+      dynamicsPercent = pop2002 > 0 ? (change / pop2002) * 100 : 0;
+      sign = Math.sign(change);
     } else {
       if (settings.selectedYear === '2010') {
         if (pop2002 > 0) dynamicsPercent = ((pop2010 - pop2002) / pop2002) * 100;
@@ -133,23 +141,46 @@ export const useMapLayers = (
           if (pop2002 > 0) dynamicsPercent = ((pop2021 - pop2002) / pop2002) * 100;
         }
       }
+      // В режиме динамики знак пока не фильтруем, оставляем 0 (диапазон будет [-1,1])
+      sign = 0;
     }
 
-    return [pop, dynamicsPercent];
+    return [pop, dynamicsPercent, sign];
   }, [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod]);
 
+  // Три размерности фильтра: население, динамика (%), знак
   const filterRange: [number, number][] = useMemo(() => {
     const popMin = settings.populationMin > 0 ? settings.populationMin : -Infinity;
     const popMax = settings.populationMax > 0 ? settings.populationMax : Infinity;
     const effectivePopMin = settings.showZeroPopulation ? popMin : Math.max(popMin, 0.1);
 
+    // Диапазон для знака зависит от выбранного направления
+    let signRange: [number, number];
+    if (settings.mode === 'absolute') {
+      switch (settings.absoluteFilter) {
+        case 'growth': signRange = [1, 1]; break;
+        case 'decline': signRange = [-1, -1]; break;
+        case 'all':
+        default: signRange = [-1, 1]; break;
+      }
+    } else {
+      // Для динамики пока не фильтруем по знаку, разрешаем все
+      signRange = [-1, 1];
+    }
+
     return [
       [effectivePopMin, popMax],
-      [settings.dynamicsMin, settings.dynamicsMax]
+      [settings.dynamicsMin, settings.dynamicsMax],
+      signRange
     ];
-  }, [settings.populationMin, settings.populationMax, settings.dynamicsMin, settings.dynamicsMax, settings.showZeroPopulation]);
+  }, [
+    settings.populationMin, settings.populationMax,
+    settings.dynamicsMin, settings.dynamicsMax,
+    settings.showZeroPopulation,
+    settings.mode, settings.absoluteFilter
+  ]);
 
-  const filterExtension = useMemo(() => new DataFilterExtension({ filterSize: 2 }), []);
+  const filterExtension = useMemo(() => new DataFilterExtension({ filterSize: 3 }), []);
 
   const layer = useMemo(() => {
     if (!data || data.length === 0) return null;
@@ -186,7 +217,12 @@ export const useMapLayers = (
         getLineColor: [settings.strokeColor],
         getLineWidth: [settings.strokeWidth],
         getFilterValue: [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod],
-        filterRange: [settings.populationMin, settings.populationMax, settings.dynamicsMin, settings.dynamicsMax, settings.showZeroPopulation],
+        filterRange: [
+          settings.populationMin, settings.populationMax,
+          settings.dynamicsMin, settings.dynamicsMax,
+          settings.showZeroPopulation,
+          settings.mode, settings.absoluteFilter
+        ],
       },
       parameters: {
         depthWriteEnabled: false,

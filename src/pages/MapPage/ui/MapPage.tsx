@@ -168,6 +168,7 @@ export const MapPage: React.FC = () => {
     mode,
     dynamicsPeriod: dynamicsMode,
     absolutePeriod,
+    absoluteFilter, // обязательно передаём в настройки слоя
     strokeWidth: settings.strokeWidth,
     strokeColor: settings.strokeColor,
     fillOpacity: settings.fillOpacity,
@@ -176,7 +177,7 @@ export const MapPage: React.FC = () => {
     dynamicsMin: filterSettings.dynamicsMin,
     dynamicsMax: filterSettings.dynamicsMax,
     showZeroPopulation: filterSettings.showZeroPopulation,
-  }), [settings, mode, dynamicsMode, absolutePeriod, filterSettings]);
+  }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings]);
 
   const deckLayers = useMapLayers(stableLocations, layerSettings, palette);
   const regionLayer = useRegionLayer(regionsData, regionConfig);
