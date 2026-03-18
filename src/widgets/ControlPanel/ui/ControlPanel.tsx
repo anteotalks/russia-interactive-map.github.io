@@ -19,6 +19,8 @@ import CenterFocusWeakIcon from '@mui/icons-material/CenterFocusWeak';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import LandscapeIcon from '@mui/icons-material/Landscape';
 import LayersClearIcon from '@mui/icons-material/LayersClear';
+import SaveIcon from '@mui/icons-material/Save';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { HexColorPicker } from 'react-colorful';
 
 import { PaletteLibrary } from '../../../shared/ui/PaletteLibrary';
@@ -33,6 +35,7 @@ import { CameraSettings } from '../../../shared/types/camera';
 import { LayerConfig } from '../../../shared/lib/hooks/useMapLayersControl';
 import { FilterSettings } from '../../../shared/types/visualization';
 import { RegionLayerConfig } from '../../../entities/region/lib/types';
+import { AppSettings } from '../../../shared/types/settings';
 
 export type YearType = '2002' | '2010' | '2021';
 export type VisualizationMode = 'dynamics' | 'absolute';
@@ -90,13 +93,15 @@ interface ControlPanelProps {
   onRegionConfigChange: (newConfig: Partial<RegionLayerConfig>) => void;
   terrainMode: TerrainMode;
   onTerrainModeChange: (mode: TerrainMode) => void;
-  
-  // Новые пропсы для списка регионов
   regions: string[];
   selectedRegions: Set<string>;
   onRegionsSelectionChange: (regions: Set<string>) => void;
   onCenterRegion: (region: string) => void;
   onCenterSelectedRegions: () => void;
+  
+  // Новые пропсы для управления сохранением
+  onSaveSettings: () => void;
+  onResetToDefault: () => void;
 }
 
 const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
@@ -111,7 +116,8 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
     populationMin, populationMax, dynamicsMin, dynamicsMax,
     regionConfig, onRegionConfigChange,
     terrainMode, onTerrainModeChange,
-    regions, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions
+    regions, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions,
+    onSaveSettings, onResetToDefault
   } = props;
 
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -177,7 +183,21 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               <DragIndicatorIcon fontSize="small" color="action" />
               <Typography variant="h6">Настройки карты</Typography>
             </Box>
-            <IconButton size="small" onClick={toggleVisibility} title="Скрыть панель (Alt)"><CloseIcon fontSize="small" /></IconButton>
+            <Box>
+              <Tooltip title="Сохранить настройки">
+                <IconButton size="small" onClick={onSaveSettings} sx={{ mr: 0.5 }}>
+                  <SaveIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Сбросить к заводским">
+                <IconButton size="small" onClick={onResetToDefault} sx={{ mr: 0.5 }}>
+                  <RestartAltIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <IconButton size="small" onClick={toggleVisibility} title="Скрыть панель (Alt)">
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Box>
           </Box>
 
           <Tabs value={activeTab} onChange={handleTabChange} sx={{ mb: 2 }} variant="fullWidth">
@@ -186,7 +206,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
             <Tab icon={<PaletteIcon fontSize="small" />} label="Палитры" />
             <Tab icon={<CenterFocusWeakIcon fontSize="small" />} label="Вид" />
             <Tab icon={<FilterListIcon fontSize="small" />} label="Фильтры" />
-            <Tab icon={<MapIcon fontSize="small" />} label="Регионы" /> {/* Новая вкладка */}
+            <Tab icon={<MapIcon fontSize="small" />} label="Регионы" />
           </Tabs>
 
           {activeTab === 0 && (
@@ -391,7 +411,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
             </Stack>
           )}
 
-          {/* Новая вкладка для выбора регионов */}
           {activeTab === 5 && (
             <Box sx={{ mt: 2 }}>
               <Typography variant="subtitle2" color="primary" gutterBottom>Выбор регионов</Typography>

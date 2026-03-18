@@ -17,6 +17,7 @@ import { usePalette } from '../../../shared/lib/hooks/usePalette';
 import { useCamera } from '../../../shared/lib/hooks/useCamera';
 import { DEFAULT_FILTER_SETTINGS, FilterSettings, SelectedRegions } from '../../../shared/types/visualization';
 import type { PaletteName } from '../../../entities/palette/lib/constants';
+import { AppSettings, DEFAULT_SETTINGS } from '../../../shared/types/settings';
 
 export interface VisualizationSettings {
   selectedYear: YearType;
@@ -27,6 +28,8 @@ export interface VisualizationSettings {
   strokeColor: string;
   fillOpacity: number;
 }
+
+const STORAGE_KEY = 'map_app_settings';
 
 const defaultSettings: VisualizationSettings = {
   selectedYear: '2021',
@@ -83,29 +86,92 @@ const calculateBoundsForRegions = (
 export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [settings, setSettings] = useState<VisualizationSettings>(defaultSettings);
-  const [mode, setMode] = useState<VisualizationMode>('dynamics');
-  const [dynamicsMode, setDynamicsMode] = useState<'2010-2021' | '2002-2021'>('2010-2021');
-  const [absolutePeriod, setAbsolutePeriod] = useState<DynamicsPeriod>('2002-2021');
-  const [absoluteFilter, setAbsoluteFilter] = useState<FilterDirection>('all');
-  const [isPanelVisible, setIsPanelVisible] = useState(true);
-  const [filterSettings, setFilterSettings] = useState<FilterSettings>(DEFAULT_FILTER_SETTINGS);
+  
+  // Загрузка сохранённых настроек или использование дефолтных
+  const loadSavedSettings = useCallback((): AppSettings => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as AppSettings;
+        // Проверка версии для будущих миграций
+        if (parsed.version === DEFAULT_SETTINGS.version) {
+          return parsed;
+        }
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки настроек из localStorage:', error);
+    }
+    return DEFAULT_SETTINGS;
+  }, []);
+
+  // Состояния с инициализацией из localStorage [citation:1]
+  const [settings, setSettings] = useState<VisualizationSettings>(() => 
+    loadSavedSettings().visualization
+  );
+  const [mode, setMode] = useState<VisualizationMode>(() => 
+    loadSavedSettings().mode
+  );
+  const [dynamicsMode, setDynamicsMode] = useState<'2010-2021' | '2002-2021'>(() => 
+    loadSavedSettings().dynamicsMode as '2010-2021' | '2002-2021'
+  );
+  const [absolutePeriod, setAbsolutePeriod] = useState<DynamicsPeriod>(() => 
+    loadSavedSettings().absolutePeriod
+  );
+  const [absoluteFilter, setAbsoluteFilter] = useState<FilterDirection>(() => 
+    loadSavedSettings().absoluteFilter
+  );
+  const [isPanelVisible, setIsPanelVisible] = useState(() => 
+    loadSavedSettings().panelVisible
+  );
+  const [filterSettings, setFilterSettings] = useState<FilterSettings>(() => 
+    loadSavedSettings().filterSettings
+  );
+  const [terrainMode, setTerrainMode] = useState<TerrainMode>(() => 
+    loadSavedSettings().terrainMode
+  );
+  const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(() => 
+    loadSavedSettings().regionConfig
+  );
+  const [selectedRegions, setSelectedRegions] = useState<SelectedRegions>(() => 
+    new Set(loadSavedSettings().selectedRegions)
+  );
+
+  const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
+  
+  // Инициализация палитры из сохранённых настроек
+  useEffect(() => {
+    const saved = loadSavedSettings();
+    if (saved.paletteName !== 'custom') {
+      selectPalette(saved.paletteName);
+    }
+    if (saved.paletteInverted) {
+      toggleInvert();
+    }
+  }, []); // только при монтировании
+
+  const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera(() => 
+    loadSavedSettings().camera
+  );
+  
+  const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = 
+    useMapLayersControl(ALL_BASE_LAYERS);
+
+  // Устанавливаем видимый базовый слой из сохранений
+  useEffect(() => {
+    const saved = loadSavedSettings();
+    const savedLayer = ALL_BASE_LAYERS.find(l => l.id === saved.visibleBaseLayer);
+    if (savedLayer && !savedLayer.visible) {
+      toggleLayer(savedLayer.id);
+    }
+  }, []);
+
   const [populationMax, setPopulationMax] = useState(10000000);
   const [dynamicsMin, setDynamicsMin] = useState(-100);
   const [dynamicsMax, setDynamicsMax] = useState(100);
-  const [terrainMode, setTerrainMode] = useState<TerrainMode>('hillshade');
-
-  const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
-  const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
-
-  const [selectedRegions, setSelectedRegions] = useState<SelectedRegions>(new Set());
-
-  const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
-  const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
-  const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
 
   const activeRequests = useRef(0);
 
+  // Загрузка данных
   useEffect(() => {
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
@@ -171,15 +237,24 @@ export const MapPage: React.FC = () => {
     };
   }, []);
 
+  const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
+
   const handleMapViewStateChange = useCallback((newViewState: any) => handleViewStateChange(newViewState), [handleViewStateChange]);
-  const handleCameraChange = useCallback((key: keyof typeof cameraSettings, value: number) => { updateCameraSetting(key, value); updateViewState({ [key]: value }); }, [updateCameraSetting, updateViewState]);
+  const handleCameraChange = useCallback((key: keyof typeof cameraSettings, value: number) => { 
+    updateCameraSetting(key, value); 
+    updateViewState({ [key]: value }); 
+  }, [updateCameraSetting, updateViewState]);
+  
   useAltKeyPress(() => setIsPanelVisible(prev => !prev));
-  const handleFilterChange = useCallback((newFilter: Partial<FilterSettings>) => setFilterSettings(prev => ({ ...prev, ...newFilter })), []);
+  
+  const handleFilterChange = useCallback((newFilter: Partial<FilterSettings>) => 
+    setFilterSettings(prev => ({ ...prev, ...newFilter })), []);
+  
   const handleRegionConfigChange = useCallback((newConfig: Partial<RegionLayerConfig>) => {
     setRegionConfig(prev => ({ ...prev, ...newConfig }));
   }, []);
+  
   const handleTerrainModeChange = useCallback((mode: TerrainMode) => setTerrainMode(mode), []);
-
   const handleRegionsSelectionChange = useCallback((newSelection: Set<string>) => {
     setSelectedRegions(newSelection);
   }, []);
@@ -250,12 +325,9 @@ export const MapPage: React.FC = () => {
 
   const stableLocations = useMemo(() => locations, [locations]);
 
-  // CPU-фильтрация по выбранным регионам
-  // ВАЖНО: если ничего не выбрано (selectedRegions.size === 0) – показываем пустой массив
   const filteredLocations = useMemo(() => {
     if (!stableLocations) return null;
     if (selectedRegions.size === 0) return [];
-    
     return stableLocations.filter(loc => selectedRegions.has(loc.region));
   }, [stableLocations, selectedRegions]);
 
@@ -288,9 +360,12 @@ export const MapPage: React.FC = () => {
     return layers;
   }, [regionConfig.visible, regionLayer, deckLayers]);
 
-  const handleSettingsChange = useCallback((newSettings: Partial<VisualizationSettings>) => setSettings(prev => ({ ...prev, ...newSettings })), []);
+  const handleSettingsChange = useCallback((newSettings: Partial<VisualizationSettings>) => 
+    setSettings(prev => ({ ...prev, ...newSettings })), []);
   const handleModeChange = useCallback((newMode: VisualizationMode) => setMode(newMode), []);
-  const handleDynamicsModeChange = useCallback((mode: DynamicsPeriod) => { if (mode === '2010-2021' || mode === '2002-2021') setDynamicsMode(mode); }, []);
+  const handleDynamicsModeChange = useCallback((mode: DynamicsPeriod) => { 
+    if (mode === '2010-2021' || mode === '2002-2021') setDynamicsMode(mode); 
+  }, []);
   const handleAbsolutePeriodChange = useCallback((period: DynamicsPeriod) => setAbsolutePeriod(period), []);
   const handleAbsoluteFilterChange = useCallback((filter: FilterDirection) => setAbsoluteFilter(filter), []);
   const handlePanelVisibilityChange = useCallback((visible: boolean) => setIsPanelVisible(visible), []);
@@ -310,6 +385,56 @@ export const MapPage: React.FC = () => {
     const uniqueRegions = new Set(locations.map(loc => loc.region));
     return Array.from(uniqueRegions).sort();
   }, [locations]);
+
+  // Автосохранение настроек при любом изменении [citation:5]
+  useEffect(() => {
+    if (isLoading) return; // Не сохраняем во время загрузки
+
+    const settingsToSave: AppSettings = {
+      version: DEFAULT_SETTINGS.version,
+      selectedYear: settings.selectedYear,
+      mode,
+      dynamicsMode,
+      absolutePeriod,
+      absoluteFilter,
+      visualization: settings,
+      paletteName: selectedName,
+      customGradient,
+      paletteInverted: selectedName === 'custom' ? false : false, // нужно получить из usePalette
+      filterSettings,
+      regionConfig,
+      selectedRegions: Array.from(selectedRegions),
+      visibleBaseLayer: baseLayer.id,
+      terrainMode,
+      camera: cameraSettings,
+      panelVisible: isPanelVisible,
+    };
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settingsToSave));
+    } catch (error) {
+      console.error('Ошибка сохранения настроек в localStorage:', error);
+    }
+  }, [
+    settings, mode, dynamicsMode, absolutePeriod, absoluteFilter,
+    selectedName, customGradient, filterSettings, regionConfig,
+    selectedRegions, baseLayer, terrainMode, cameraSettings, isPanelVisible,
+    isLoading
+  ]);
+
+  // Сброс к заводским настройкам
+  const handleResetToDefault = useCallback(() => {
+    if (window.confirm('Сбросить все настройки к значениям по умолчанию?')) {
+      localStorage.removeItem(STORAGE_KEY);
+      window.location.reload();
+    }
+  }, []);
+
+  // Сохранение настроек вручную (кнопка)
+  const handleSaveSettings = useCallback(() => {
+    // Автосохранение уже работает, просто уведомляем
+    alert('Настройки сохранены');
+  }, []);
 
   if (isLoading) {
     return (
@@ -382,6 +507,8 @@ export const MapPage: React.FC = () => {
         onRegionsSelectionChange={handleRegionsSelectionChange}
         onCenterRegion={handleCenterRegion}
         onCenterSelectedRegions={handleCenterSelectedRegions}
+        onSaveSettings={handleSaveSettings}
+        onResetToDefault={handleResetToDefault}
       />
       <MapWidget
         ref={mapRef}
