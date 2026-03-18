@@ -1,271 +1,12 @@
 #!/bin/bash
-
 set -e
 
-# ============================================================
-# 1. src/shared/lib/hooks/useRegionLayer.ts
-# ============================================================
-cat > src/shared/lib/hooks/useRegionLayer.ts << 'EOF'
-/**
- * Хук для слоя границ регионов с корректной обработкой глубины
- * для правильного наложения на точки.
- */
+echo "🔧 Исправляем логику 'Ни одного' – полная замена файла..."
 
-import { useMemo } from 'react';
-import { GeoJsonLayer } from '@deck.gl/layers';
-import type { FeatureCollection } from 'geojson';
-import { hexToRgb } from '../color/utils';
-import type { RegionLayerConfig } from '../../../entities/region/lib/types';
-
-export const useRegionLayer = (
-  regionsData: FeatureCollection | null,
-  config: RegionLayerConfig
-): GeoJsonLayer | null => {
-  return useMemo(() => {
-    // Если данных нет или они пустые – не создаём слой
-    if (!regionsData || !regionsData.features || regionsData.features.length === 0) {
-      return null;
-    }
-
-    // Проверяем, что конфигурация валидна
-    if (!config) return null;
-
-    const lineColorRgb = hexToRgb(config.color);
-
-    // Создаём слой с явным указанием id
-    return new GeoJsonLayer({
-      id: 'regions-layer',
-      data: regionsData,
-      stroked: true,
-      filled: false,
-      getLineColor: lineColorRgb,
-      getLineWidth: config.width,
-      lineWidthUnits: 'pixels',
-      opacity: config.opacity,
-      // Видимость управляется напрямую
-      visible: config.visible,
-      pickable: false,
-      autoHighlight: false,
-      highlightColor: [0, 0, 0, 0],
-      
-      // КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: параметры для корректного наложения
-      parameters: {
-        // depthMask: false предотвращает запись в Z-буфер, позволяя
-        // другим слоям (точкам) рисоваться поверх/под линиями правильно
-        depthMask: false,
-        // depthTest оставляем включённым, но т.к. depthMask = false,
-        // линии не будут "забивать" собой точки в Z-буфере
-        depthTest: true
-      },
-      
-      updateTriggers: {
-        getLineColor: [config.color],
-        getLineWidth: [config.width],
-        opacity: [config.opacity],
-      },
-      lineWidthMinPixels: 0.5,
-      lineWidthMaxPixels: 10,
-    });
-  }, [regionsData, config.visible, config.color, config.width, config.opacity]);
-};
-EOF
-
-# ============================================================
-# 2. src/widgets/Map/ui/MapWidget.tsx
-# ============================================================
-cat > src/widgets/Map/ui/MapWidget.tsx << 'EOF'
-/**
- * MapWidget - компонент карты с полной адаптивностью и правильной интеграцией DeckGL
- * 
- * ОСОБЕННОСТИ:
- * - Автоматически подстраивается под размер контейнера (ResizeObserver)
- * - Корректно работает при изменении размеров окна и повороте устройства
- * - Гарантирует, что все слои deck.gl рендерятся в одном контексте
- */
-
-import React, { forwardRef, useEffect, useRef, useCallback } from 'react';
-import Map, { MapRef, useControl } from 'react-map-gl/maplibre';
-import { MapboxOverlay } from '@deck.gl/mapbox';
-import type { MapboxOverlayProps } from '@deck.gl/mapbox';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Layer } from '@deck.gl/core';
-import type { LayerConfig } from '../../../shared/types/map';
-import { NavigationControl } from 'react-map-gl/maplibre';
-import { buildMapStyle } from '../../../shared/lib/map/buildMapStyle';
-import { TerrainDem } from '../lib/TerrainDem';
-import { HillshadeDem } from '../lib/HillshadeDem';
-
-export type TerrainMode = 'none' | 'hillshade' | '3d';
-
-interface MapWidgetProps {
-  layers: Layer[];
-  getTooltip?: (info: any) => any;
-  viewState?: {
-    longitude: number;
-    latitude: number;
-    zoom: number;
-    pitch?: number;
-    bearing?: number;
-  };
-  initialViewState?: {
-    longitude: number;
-    latitude: number;
-    zoom: number;
-    pitch?: number;
-    bearing?: number;
-  };
-  baseLayer: LayerConfig;
-  terrainMode: TerrainMode;
-  onViewStateChange?: (viewState: any) => void;
-}
-
-function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
-  // Убеждаемся, что overlay всегда использует interleaved: true
-  const overlay = useControl<MapboxOverlay>(
-    () => new MapboxOverlay({ 
-      ...props, 
-      interleaved: true  // Всегда interleaved для одного контекста
-    }),
-  );
-  overlay.setProps(props);
-  return null;
-}
-
-// Простая функция throttle для оптимизации resize
-function throttle<T extends (...args: any[]) => any>(func: T, limit: number): T {
-  let inThrottle: boolean;
-  return ((...args: any[]) => {
-    if (!inThrottle) {
-      func(...args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  }) as T;
-}
-
-export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
-  layers,
-  getTooltip,
-  viewState,
-  initialViewState,
-  baseLayer,
-  terrainMode,
-  onViewStateChange,
-}, ref) => {
-  const mapStyle = React.useMemo(() => buildMapStyle(baseLayer), [baseLayer]);
-  const terrainProps = terrainMode === '3d' ? { source: 'terrain-dem', exaggeration: 1.5 } : undefined;
-  
-  // Реф для контейнера карты (нужен для ResizeObserver)
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRefLocal = useRef<MapRef | null>(null);
-
-  // Функция для принудительного обновления размеров карты
-  const handleResize = useCallback(() => {
-    if (mapRefLocal.current) {
-      mapRefLocal.current.resize();
-    }
-  }, []);
-
-  // Throttled версия для производительности
-  const throttledResize = useCallback(throttle(handleResize, 100), [handleResize]);
-
-  // 1. Слушаем resize окна (стандартный подход)
-  useEffect(() => {
-    window.addEventListener('resize', throttledResize);
-    return () => window.removeEventListener('resize', throttledResize);
-  }, [throttledResize]);
-
-  // 2. Используем ResizeObserver для отслеживания изменений контейнера
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const observer = new ResizeObserver((entries) => {
-      // При любом изменении размера контейнера вызываем resize карты
-      throttledResize();
-    });
-
-    observer.observe(containerRef.current);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [throttledResize]);
-
-  // 3. При первом рендере тоже вызываем resize (для надёжности)
-  useEffect(() => {
-    // Небольшая задержка, чтобы DOM успел отрисоваться
-    const timeoutId = setTimeout(() => {
-      handleResize();
-    }, 100);
-    
-    return () => clearTimeout(timeoutId);
-  }, [handleResize]);
-
-  useEffect(() => {
-    console.info(`🌍 Режим рельефа: ${terrainMode}`);
-  }, [terrainMode]);
-
-  return (
-    <div 
-      ref={containerRef}
-      style={{ 
-        position: 'absolute', 
-        top: 0, 
-        left: 0, 
-        right: 0, 
-        bottom: 0,
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden'
-      }}
-    >
-      <Map
-        ref={(node) => {
-          mapRefLocal.current = node;
-          if (typeof ref === 'function') ref(node);
-          else if (ref) ref.current = node;
-        }}
-        mapStyle={mapStyle}
-        {...(viewState ? viewState : {})}
-        initialViewState={!viewState ? initialViewState : undefined}
-        onMove={onViewStateChange ? (evt) => onViewStateChange(evt.viewState) : undefined}
-        maxPitch={85}
-        attributionControl={false}
-        maxTileCacheSize={200}
-        maxTileCacheZoomLevels={8}
-        validateStyle={process.env.NODE_ENV === "production" ? false : undefined}
-        onLoad={() => {
-          console.log('✅ MapLibre карта загружена');
-          // Принудительно обновляем размер после загрузки
-          handleResize();
-        }}
-        onError={(e) => console.error('❌ Ошибка MapLibre:', e)}
-        style={{ width: '100%', height: '100%' }}
-        terrain={terrainProps}
-      >
-        <TerrainDem />
-        {terrainMode === 'hillshade' && <HillshadeDem />}
-        <NavigationControl position="top-right" />
-        <DeckGLOverlay
-          layers={layers}
-          getTooltip={getTooltip}
-          interleaved={true}
-        />
-      </Map>
-    </div>
-  );
-});
-
-MapWidget.displayName = 'MapWidget';
-export default MapWidget;
-EOF
-
-# ============================================================
-# 3. src/pages/MapPage/ui/MapPage.tsx
-# ============================================================
 cat > src/pages/MapPage/ui/MapPage.tsx << 'EOF'
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { FeatureCollection } from 'geojson';
+import { FlyToInterpolator } from '@deck.gl/core';
 import { fetchRegionsFromGeoJSON } from '../../../entities/region';
 import { DEFAULT_REGION_CONFIG, RegionLayerConfig } from '../../../entities/region/lib/types';
 import { useRegionLayer } from '../../../shared/lib/hooks/useRegionLayer';
@@ -280,7 +21,7 @@ import { useMapLayersControl } from '../../../shared/lib/hooks/useMapLayersContr
 import { ALL_BASE_LAYERS } from '../lib/mapLayers';
 import { usePalette } from '../../../shared/lib/hooks/usePalette';
 import { useCamera } from '../../../shared/lib/hooks/useCamera';
-import { DEFAULT_FILTER_SETTINGS, FilterSettings } from '../../../shared/types/visualization';
+import { DEFAULT_FILTER_SETTINGS, FilterSettings, SelectedRegions } from '../../../shared/types/visualization';
 import type { PaletteName } from '../../../entities/palette/lib/constants';
 
 export interface VisualizationSettings {
@@ -322,6 +63,29 @@ const getDynamicsExtents = (locations: Location[]): [number, number] => {
   return [min === Infinity ? -100 : Math.floor(min), max === -Infinity ? 100 : Math.ceil(max)];
 };
 
+const calculateBoundsForRegions = (
+  regions: Set<string>,
+  locations: Location[] | null
+): { minLat: number; maxLat: number; minLon: number; maxLon: number } | null => {
+  if (!locations || regions.size === 0) return null;
+
+  let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+  let found = false;
+
+  locations.forEach(loc => {
+    if (regions.has(loc.region)) {
+      minLat = Math.min(minLat, loc.latitude);
+      maxLat = Math.max(maxLat, loc.latitude);
+      minLon = Math.min(minLon, loc.longitude);
+      maxLon = Math.max(maxLon, loc.longitude);
+      found = true;
+    }
+  });
+
+  if (!found) return null;
+  return { minLat, maxLat, minLon, maxLon };
+};
+
 export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -340,17 +104,17 @@ export const MapPage: React.FC = () => {
   const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
   const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
 
+  const [selectedRegions, setSelectedRegions] = useState<SelectedRegions>(new Set());
+
   const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
   const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
 
-  // Счётчик активных запросов – гарантирует сброс isLoading только после последнего
   const activeRequests = useRef(0);
 
-  // Загрузка локаций – локальный флаг ignore вместо внешнего isMounted
   useEffect(() => {
     const controller = new AbortController();
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]); // таймаут 30с
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
     let ignore = false;
 
     activeRequests.current += 1;
@@ -373,7 +137,6 @@ export const MapPage: React.FC = () => {
         }
       } finally {
         activeRequests.current -= 1;
-        // Сбрасываем isLoading только если нет активных запросов
         if (activeRequests.current === 0) {
           setIsLoading(false);
         }
@@ -386,9 +149,8 @@ export const MapPage: React.FC = () => {
       ignore = true;
       controller.abort();
     };
-  }, []); // пустой массив – эффект только при монтировании
+  }, []);
 
-  // Загрузка границ регионов – аналогичный паттерн
   useEffect(() => {
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
@@ -424,7 +186,84 @@ export const MapPage: React.FC = () => {
   }, []);
   const handleTerrainModeChange = useCallback((mode: TerrainMode) => setTerrainMode(mode), []);
 
+  const handleRegionsSelectionChange = useCallback((newSelection: Set<string>) => {
+    setSelectedRegions(newSelection);
+  }, []);
+
+  const handleCenterRegion = useCallback((region: string) => {
+    const bounds = calculateBoundsForRegions(new Set([region]), locations);
+    if (!bounds) return;
+
+    const { minLat, maxLat, minLon, maxLon } = bounds;
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
+
+    const latDiff = maxLat - minLat;
+    const lonDiff = maxLon - minLon;
+    const maxDiff = Math.max(latDiff, lonDiff);
+    
+    let zoom = 5;
+    if (maxDiff > 20) zoom = 3;
+    else if (maxDiff > 10) zoom = 4;
+    else if (maxDiff > 5) zoom = 5;
+    else if (maxDiff > 2) zoom = 6;
+    else if (maxDiff > 1) zoom = 7;
+    else if (maxDiff > 0.5) zoom = 8;
+    else if (maxDiff > 0.2) zoom = 9;
+    else zoom = 10;
+
+    updateViewState({
+      longitude: centerLon,
+      latitude: centerLat,
+      zoom,
+      transitionInterpolator: new FlyToInterpolator({ speed: 1.5 }),
+      transitionDuration: 2000,
+    });
+  }, [locations, updateViewState]);
+
+  const handleCenterSelectedRegions = useCallback(() => {
+    if (selectedRegions.size === 0) return;
+    
+    const bounds = calculateBoundsForRegions(selectedRegions, locations);
+    if (!bounds) return;
+
+    const { minLat, maxLat, minLon, maxLon } = bounds;
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
+
+    const latDiff = maxLat - minLat;
+    const lonDiff = maxLon - minLon;
+    const maxDiff = Math.max(latDiff, lonDiff);
+    
+    let zoom = 5;
+    if (maxDiff > 20) zoom = 3;
+    else if (maxDiff > 10) zoom = 4;
+    else if (maxDiff > 5) zoom = 5;
+    else if (maxDiff > 2) zoom = 6;
+    else if (maxDiff > 1) zoom = 7;
+    else if (maxDiff > 0.5) zoom = 8;
+    else if (maxDiff > 0.2) zoom = 9;
+    else zoom = 10;
+
+    updateViewState({
+      longitude: centerLon,
+      latitude: centerLat,
+      zoom,
+      transitionInterpolator: new FlyToInterpolator({ speed: 1.5 }),
+      transitionDuration: 2000,
+    });
+  }, [selectedRegions, locations, updateViewState]);
+
   const stableLocations = useMemo(() => locations, [locations]);
+
+  // CPU-фильтрация по выбранным регионам
+  // ВАЖНО: если ничего не выбрано (selectedRegions.size === 0) – показываем пустой массив
+  const filteredLocations = useMemo(() => {
+    if (!stableLocations) return null;
+    if (selectedRegions.size === 0) return [];
+    
+    return stableLocations.filter(loc => selectedRegions.has(loc.region));
+  }, [stableLocations, selectedRegions]);
 
   const layerSettings = useMemo(() => ({
     selectedYear: settings.selectedYear,
@@ -434,7 +273,7 @@ export const MapPage: React.FC = () => {
     mode,
     dynamicsPeriod: dynamicsMode,
     absolutePeriod,
-    absoluteFilter, // обязательно передаём в настройки слоя
+    absoluteFilter,
     strokeWidth: settings.strokeWidth,
     strokeColor: settings.strokeColor,
     fillOpacity: settings.fillOpacity,
@@ -445,7 +284,7 @@ export const MapPage: React.FC = () => {
     showZeroPopulation: filterSettings.showZeroPopulation,
   }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings]);
 
-  const deckLayers = useMapLayers(stableLocations, layerSettings, palette);
+  const deckLayers = useMapLayers(filteredLocations, layerSettings, palette);
   const regionLayer = useRegionLayer(regionsData, regionConfig);
 
   const allLayers = useMemo(() => {
@@ -471,6 +310,12 @@ export const MapPage: React.FC = () => {
       style: { backgroundColor: '#111', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px' }
     };
   }, []);
+
+  const regionList = useMemo(() => {
+    if (!locations) return [];
+    const uniqueRegions = new Set(locations.map(loc => loc.region));
+    return Array.from(uniqueRegions).sort();
+  }, [locations]);
 
   if (isLoading) {
     return (
@@ -538,6 +383,11 @@ export const MapPage: React.FC = () => {
         onRegionConfigChange={handleRegionConfigChange}
         terrainMode={terrainMode}
         onTerrainModeChange={handleTerrainModeChange}
+        regions={regionList}
+        selectedRegions={selectedRegions}
+        onRegionsSelectionChange={handleRegionsSelectionChange}
+        onCenterRegion={handleCenterRegion}
+        onCenterSelectedRegions={handleCenterSelectedRegions}
       />
       <MapWidget
         ref={mapRef}
@@ -555,5 +405,5 @@ export const MapPage: React.FC = () => {
 export default MapPage;
 EOF
 
-echo "✅ Все файлы успешно обновлены!"
-echo "🎯 Границы регионов теперь будут корректно накладываться на точки."
+echo "✅ MapPage.tsx полностью заменён с правильной логикой!"
+echo "🚀 Перезапустите проект: pnpm dev"

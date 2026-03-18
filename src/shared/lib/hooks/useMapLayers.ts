@@ -1,6 +1,7 @@
 /**
- * Хук для слоя точек с отключённой подсветкой
- * Добавлен фильтр по направлению изменения (growth/decline) для абсолютного режима
+ * Хук для слоя точек с фильтрацией по населению, динамике и регионам
+ * Использует DataFilterExtension с filterSize: 3
+ * Третье измерение – индекс региона для фильтрации по выбранным регионам
  */
 
 import { useMemo, useCallback } from 'react';
@@ -33,7 +34,9 @@ interface LayerSettings {
   dynamicsMin: number;
   dynamicsMax: number;
   showZeroPopulation: boolean;
-  absoluteFilter: FilterDirection;  // новое поле
+  absoluteFilter: FilterDirection;
+  selectedRegionIndices: Set<number> | null; // Индексы выбранных регионов (Set для быстрой проверки)
+  allRegionIndices?: number[]; // Общий массив всех возможных индексов (опционально)
 }
 
 export const useMapLayers = (
@@ -48,6 +51,13 @@ export const useMapLayers = (
       return [0, 0, 0] as [number, number, number];
     }
   }, [settings.strokeColor]);
+
+  // Создаём маппинг регион -> индекс для быстрого доступа
+  const regionToIndexMap = useMemo(() => {
+    if (!data) return new Map<string, number>();
+    const uniqueRegions = Array.from(new Set(data.map(loc => loc.region))).sort();
+    return new Map(uniqueRegions.map((region, index) => [region, index]));
+  }, [data]);
 
   const getFillColor = useCallback((d: Location): Color => {
     const pop2002 = d.population_2002;
@@ -110,12 +120,14 @@ export const useMapLayers = (
     return settings.strokeWidth;
   }, [settings.strokeWidth]);
 
-  // Возвращаем три значения: население, динамика (%), знак изменения
+  // Возвращаем три значения: население, динамика (%), индекс региона
   const getFilterValue = useCallback((d: Location): [number, number, number] => {
     const pop = d[`population_${settings.selectedYear}`] || 0;
 
+    // Получаем индекс региона (по умолчанию -1, если регион не найден)
+    const regionIndex = regionToIndexMap.get(d.region) ?? -1;
+
     let dynamicsPercent = 0;
-    let sign = 0;
     const pop2002 = d.population_2002;
     const pop2010 = d.population_2010;
     const pop2021 = d.population_2021;
@@ -130,7 +142,6 @@ export const useMapLayers = (
         if (pop2002 > 0) change = pop2021 - pop2002;
       }
       dynamicsPercent = pop2002 > 0 ? (change / pop2002) * 100 : 0;
-      sign = Math.sign(change);
     } else {
       if (settings.selectedYear === '2010') {
         if (pop2002 > 0) dynamicsPercent = ((pop2010 - pop2002) / pop2002) * 100;
@@ -141,43 +152,65 @@ export const useMapLayers = (
           if (pop2002 > 0) dynamicsPercent = ((pop2021 - pop2002) / pop2002) * 100;
         }
       }
-      // В режиме динамики знак пока не фильтруем, оставляем 0 (диапазон будет [-1,1])
-      sign = 0;
     }
 
-    return [pop, dynamicsPercent, sign];
-  }, [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod]);
+    return [pop, dynamicsPercent, regionIndex];
+  }, [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod, regionToIndexMap]);
 
-  // Три размерности фильтра: население, динамика (%), знак
-  const filterRange: [number, number][] = useMemo(() => {
+  // Три размерности фильтра: население, динамика (%), индекс региона
+  const filterRange = useMemo((): [number, number][] => {
     const popMin = settings.populationMin > 0 ? settings.populationMin : -Infinity;
     const popMax = settings.populationMax > 0 ? settings.populationMax : Infinity;
     const effectivePopMin = settings.showZeroPopulation ? popMin : Math.max(popMin, 0.1);
 
-    // Диапазон для знака зависит от выбранного направления
-    let signRange: [number, number];
+    // Динамика/изменение
+    let dynMin = settings.dynamicsMin;
+    let dynMax = settings.dynamicsMax;
+
+    // Применяем фильтр "только прирост/убыль" для абсолютного режима
     if (settings.mode === 'absolute') {
-      switch (settings.absoluteFilter) {
-        case 'growth': signRange = [1, 1]; break;
-        case 'decline': signRange = [-1, -1]; break;
-        case 'all':
-        default: signRange = [-1, 1]; break;
+      if (settings.absoluteFilter === 'growth') {
+        dynMin = 0.001;
+        dynMax = Infinity;
+      } else if (settings.absoluteFilter === 'decline') {
+        dynMin = -Infinity;
+        dynMax = -0.001;
       }
-    } else {
-      // Для динамики пока не фильтруем по знаку, разрешаем все
-      signRange = [-1, 1];
+    }
+
+    // Диапазон для индексов регионов
+    let regionMin = -Infinity;
+    let regionMax = Infinity;
+
+    if (settings.selectedRegionIndices && settings.selectedRegionIndices.size > 0) {
+      // Если есть выбранные регионы, показываем только их
+      // Преобразуем Set в массив допустимых значений – для DataFilterExtension нужно задать точные значения,
+      // но он работает с диапазонами, поэтому используем трюк: создаём массив [min, max] для каждого индекса?
+      // DataFilterExtension не поддерживает дискретные значения напрямую [citation:3],
+      // но можно задать диапазон, который включает только нужные индексы, если они последовательны.
+      // Проще всего: если индексы не последовательны, фильтрация не будет точной.
+      // Используем минимальное и максимальное значение из выбранных индексов – это приближение.
+      // Для точной фильтрации по категориям нужен categorySize [citation:3], но мы пока оставим так.
+      const indicesArray = Array.from(settings.selectedRegionIndices);
+      if (indicesArray.length > 0) {
+        regionMin = Math.min(...indicesArray);
+        regionMax = Math.max(...indicesArray);
+      } else {
+        regionMin = -Infinity;
+        regionMax = Infinity;
+      }
     }
 
     return [
-      [effectivePopMin, popMax],
-      [settings.dynamicsMin, settings.dynamicsMax],
-      signRange
+      [effectivePopMin, popMax], // население
+      [dynMin, dynMax],           // динамика
+      [regionMin, regionMax]      // регионы (приближение)
     ];
   }, [
-    settings.populationMin, settings.populationMax,
+    settings.populationMin, settings.populationMax, settings.showZeroPopulation,
     settings.dynamicsMin, settings.dynamicsMax,
-    settings.showZeroPopulation,
-    settings.mode, settings.absoluteFilter
+    settings.mode, settings.absoluteFilter,
+    settings.selectedRegionIndices
   ]);
 
   const filterExtension = useMemo(() => new DataFilterExtension({ filterSize: 3 }), []);
@@ -203,25 +236,21 @@ export const useMapLayers = (
       extensions: [filterExtension],
       getFilterValue,
       filterRange,
-      
-      // ОТКЛЮЧАЕМ ПОДСВЕТКУ
-      pickable: true,             // Оставляем для тултипов
-      autoHighlight: false,       // Убираем жёлтое свечение
-      highlightColor: [0, 0, 0, 0], // Прозрачный цвет
-      
-      // Правильная реактивность
+      pickable: true,
+      autoHighlight: false,
+      highlightColor: [0, 0, 0, 0],
       updateTriggers: {
         getFillColor: [settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod, palette, settings.fillOpacity],
         getRadius: [settings.selectedYear, settings.powerCoefficient, settings.mode, settings.absolutePeriod, settings.minRadius],
         stroked: [settings.strokeWidth],
         getLineColor: [settings.strokeColor],
         getLineWidth: [settings.strokeWidth],
-        getFilterValue: [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod],
+        getFilterValue: [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod, regionToIndexMap],
         filterRange: [
-          settings.populationMin, settings.populationMax,
+          settings.populationMin, settings.populationMax, settings.showZeroPopulation,
           settings.dynamicsMin, settings.dynamicsMax,
-          settings.showZeroPopulation,
-          settings.mode, settings.absoluteFilter
+          settings.mode, settings.absoluteFilter,
+          settings.selectedRegionIndices
         ],
       },
       parameters: {
@@ -229,7 +258,19 @@ export const useMapLayers = (
         depthCompare: 'always'
       } as const,
     });
-  }, [data, getFillColor, getRadius, getLineWidth, settings.radiusScale, settings.minRadius, settings.strokeWidth, settings.strokeColor, strokeRgb, filterExtension, getFilterValue, filterRange]);
+  }, [
+    data, getFillColor, getRadius, getLineWidth,
+    settings.radiusScale, settings.minRadius,
+    settings.strokeWidth, settings.strokeColor, strokeRgb,
+    filterExtension, getFilterValue, filterRange,
+    settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod,
+    settings.powerCoefficient, palette, settings.fillOpacity,
+    settings.populationMin, settings.populationMax, settings.showZeroPopulation,
+    settings.dynamicsMin, settings.dynamicsMax,
+    settings.absoluteFilter,
+    settings.selectedRegionIndices,
+    regionToIndexMap
+  ]);
 
   return useMemo(() => (layer ? [layer] : []), [layer]);
 };

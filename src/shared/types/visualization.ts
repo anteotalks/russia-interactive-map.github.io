@@ -49,3 +49,6 @@ export const DEFAULT_FILTER_SETTINGS: FilterSettings = {
     dynamicsMax: 100,
     showZeroPopulation: true
 };
+
+// Тип для хранения состояния выбранных регионов
+export type SelectedRegions = Set<string>;

@@ -25,6 +25,7 @@ import { PaletteLibrary } from '../../../shared/ui/PaletteLibrary';
 import { GradientPicker } from '../../../shared/ui/GradientPicker';
 import { CameraControls } from '../../../shared/ui/CameraControls';
 import { SliderWithInput } from '../../../shared/ui/SliderWithInput';
+import { RegionList } from '../../../shared/ui/RegionList';
 import { PaletteName } from '../../../entities/palette/lib/constants';
 import { invertPalette } from '../../../shared/lib/color/utils';
 import { GradientConfig } from '../../../entities/palette/lib/types';
@@ -89,6 +90,13 @@ interface ControlPanelProps {
   onRegionConfigChange: (newConfig: Partial<RegionLayerConfig>) => void;
   terrainMode: TerrainMode;
   onTerrainModeChange: (mode: TerrainMode) => void;
+  
+  // Новые пропсы для списка регионов
+  regions: string[];
+  selectedRegions: Set<string>;
+  onRegionsSelectionChange: (regions: Set<string>) => void;
+  onCenterRegion: (region: string) => void;
+  onCenterSelectedRegions: () => void;
 }
 
 const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
@@ -102,7 +110,8 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
     isVisible, onVisibilityChange, filterSettings, onFilterChange,
     populationMin, populationMax, dynamicsMin, dynamicsMax,
     regionConfig, onRegionConfigChange,
-    terrainMode, onTerrainModeChange
+    terrainMode, onTerrainModeChange,
+    regions, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions
   } = props;
 
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -177,6 +186,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
             <Tab icon={<PaletteIcon fontSize="small" />} label="Палитры" />
             <Tab icon={<CenterFocusWeakIcon fontSize="small" />} label="Вид" />
             <Tab icon={<FilterListIcon fontSize="small" />} label="Фильтры" />
+            <Tab icon={<MapIcon fontSize="small" />} label="Регионы" /> {/* Новая вкладка */}
           </Tabs>
 
           {activeTab === 0 && (
@@ -205,7 +215,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                 </Box>
               )}
 
-              {/* Показываем выбор года ТОЛЬКО в режиме динамики */}
               {mode === 'dynamics' && (
                 <FormControl fullWidth size="small">
                   <InputLabel>Год переписи</InputLabel>
@@ -284,7 +293,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               </FormGroup>
               <Divider sx={{ my: 1 }} />
               
-              {/* Секция границ регионов */}
               <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle2" color="primary" gutterBottom>Границы регионов</Typography>
                 <FormControlLabel
@@ -381,6 +389,20 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               <SliderWithInput label="Мин. динамика" value={filterSettings.dynamicsMin} onChange={(val) => onFilterChange({ dynamicsMin: val })} min={dynamicsMin} max={dynamicsMax} step={1} unit="%" />
               <SliderWithInput label="Макс. динамика" value={filterSettings.dynamicsMax} onChange={(val) => onFilterChange({ dynamicsMax: val })} min={dynamicsMin} max={dynamicsMax} step={1} unit="%" />
             </Stack>
+          )}
+
+          {/* Новая вкладка для выбора регионов */}
+          {activeTab === 5 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" color="primary" gutterBottom>Выбор регионов</Typography>
+              <RegionList
+                regions={regions}
+                selectedRegions={selectedRegions}
+                onSelectionChange={onRegionsSelectionChange}
+                onCenterRegion={onCenterRegion}
+                onCenterSelected={onCenterSelectedRegions}
+              />
+            </Box>
           )}
         </Paper>
       </div>

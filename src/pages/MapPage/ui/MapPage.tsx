@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { FeatureCollection } from 'geojson';
+import { FlyToInterpolator } from '@deck.gl/core';
 import { fetchRegionsFromGeoJSON } from '../../../entities/region';
 import { DEFAULT_REGION_CONFIG, RegionLayerConfig } from '../../../entities/region/lib/types';
 import { useRegionLayer } from '../../../shared/lib/hooks/useRegionLayer';
@@ -14,7 +15,7 @@ import { useMapLayersControl } from '../../../shared/lib/hooks/useMapLayersContr
 import { ALL_BASE_LAYERS } from '../lib/mapLayers';
 import { usePalette } from '../../../shared/lib/hooks/usePalette';
 import { useCamera } from '../../../shared/lib/hooks/useCamera';
-import { DEFAULT_FILTER_SETTINGS, FilterSettings } from '../../../shared/types/visualization';
+import { DEFAULT_FILTER_SETTINGS, FilterSettings, SelectedRegions } from '../../../shared/types/visualization';
 import type { PaletteName } from '../../../entities/palette/lib/constants';
 
 export interface VisualizationSettings {
@@ -56,6 +57,29 @@ const getDynamicsExtents = (locations: Location[]): [number, number] => {
   return [min === Infinity ? -100 : Math.floor(min), max === -Infinity ? 100 : Math.ceil(max)];
 };
 
+const calculateBoundsForRegions = (
+  regions: Set<string>,
+  locations: Location[] | null
+): { minLat: number; maxLat: number; minLon: number; maxLon: number } | null => {
+  if (!locations || regions.size === 0) return null;
+
+  let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+  let found = false;
+
+  locations.forEach(loc => {
+    if (regions.has(loc.region)) {
+      minLat = Math.min(minLat, loc.latitude);
+      maxLat = Math.max(maxLat, loc.latitude);
+      minLon = Math.min(minLon, loc.longitude);
+      maxLon = Math.max(maxLon, loc.longitude);
+      found = true;
+    }
+  });
+
+  if (!found) return null;
+  return { minLat, maxLat, minLon, maxLon };
+};
+
 export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,17 +98,17 @@ export const MapPage: React.FC = () => {
   const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
   const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
 
+  const [selectedRegions, setSelectedRegions] = useState<SelectedRegions>(new Set());
+
   const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
   const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
 
-  // Счётчик активных запросов – гарантирует сброс isLoading только после последнего
   const activeRequests = useRef(0);
 
-  // Загрузка локаций – локальный флаг ignore вместо внешнего isMounted
   useEffect(() => {
     const controller = new AbortController();
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]); // таймаут 30с
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
     let ignore = false;
 
     activeRequests.current += 1;
@@ -107,7 +131,6 @@ export const MapPage: React.FC = () => {
         }
       } finally {
         activeRequests.current -= 1;
-        // Сбрасываем isLoading только если нет активных запросов
         if (activeRequests.current === 0) {
           setIsLoading(false);
         }
@@ -120,9 +143,8 @@ export const MapPage: React.FC = () => {
       ignore = true;
       controller.abort();
     };
-  }, []); // пустой массив – эффект только при монтировании
+  }, []);
 
-  // Загрузка границ регионов – аналогичный паттерн
   useEffect(() => {
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
@@ -158,7 +180,84 @@ export const MapPage: React.FC = () => {
   }, []);
   const handleTerrainModeChange = useCallback((mode: TerrainMode) => setTerrainMode(mode), []);
 
+  const handleRegionsSelectionChange = useCallback((newSelection: Set<string>) => {
+    setSelectedRegions(newSelection);
+  }, []);
+
+  const handleCenterRegion = useCallback((region: string) => {
+    const bounds = calculateBoundsForRegions(new Set([region]), locations);
+    if (!bounds) return;
+
+    const { minLat, maxLat, minLon, maxLon } = bounds;
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
+
+    const latDiff = maxLat - minLat;
+    const lonDiff = maxLon - minLon;
+    const maxDiff = Math.max(latDiff, lonDiff);
+    
+    let zoom = 5;
+    if (maxDiff > 20) zoom = 3;
+    else if (maxDiff > 10) zoom = 4;
+    else if (maxDiff > 5) zoom = 5;
+    else if (maxDiff > 2) zoom = 6;
+    else if (maxDiff > 1) zoom = 7;
+    else if (maxDiff > 0.5) zoom = 8;
+    else if (maxDiff > 0.2) zoom = 9;
+    else zoom = 10;
+
+    updateViewState({
+      longitude: centerLon,
+      latitude: centerLat,
+      zoom,
+      transitionInterpolator: new FlyToInterpolator({ speed: 1.5 }),
+      transitionDuration: 2000,
+    });
+  }, [locations, updateViewState]);
+
+  const handleCenterSelectedRegions = useCallback(() => {
+    if (selectedRegions.size === 0) return;
+    
+    const bounds = calculateBoundsForRegions(selectedRegions, locations);
+    if (!bounds) return;
+
+    const { minLat, maxLat, minLon, maxLon } = bounds;
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
+
+    const latDiff = maxLat - minLat;
+    const lonDiff = maxLon - minLon;
+    const maxDiff = Math.max(latDiff, lonDiff);
+    
+    let zoom = 5;
+    if (maxDiff > 20) zoom = 3;
+    else if (maxDiff > 10) zoom = 4;
+    else if (maxDiff > 5) zoom = 5;
+    else if (maxDiff > 2) zoom = 6;
+    else if (maxDiff > 1) zoom = 7;
+    else if (maxDiff > 0.5) zoom = 8;
+    else if (maxDiff > 0.2) zoom = 9;
+    else zoom = 10;
+
+    updateViewState({
+      longitude: centerLon,
+      latitude: centerLat,
+      zoom,
+      transitionInterpolator: new FlyToInterpolator({ speed: 1.5 }),
+      transitionDuration: 2000,
+    });
+  }, [selectedRegions, locations, updateViewState]);
+
   const stableLocations = useMemo(() => locations, [locations]);
+
+  // CPU-фильтрация по выбранным регионам
+  // ВАЖНО: если ничего не выбрано (selectedRegions.size === 0) – показываем пустой массив
+  const filteredLocations = useMemo(() => {
+    if (!stableLocations) return null;
+    if (selectedRegions.size === 0) return [];
+    
+    return stableLocations.filter(loc => selectedRegions.has(loc.region));
+  }, [stableLocations, selectedRegions]);
 
   const layerSettings = useMemo(() => ({
     selectedYear: settings.selectedYear,
@@ -168,7 +267,7 @@ export const MapPage: React.FC = () => {
     mode,
     dynamicsPeriod: dynamicsMode,
     absolutePeriod,
-    absoluteFilter, // обязательно передаём в настройки слоя
+    absoluteFilter,
     strokeWidth: settings.strokeWidth,
     strokeColor: settings.strokeColor,
     fillOpacity: settings.fillOpacity,
@@ -179,7 +278,7 @@ export const MapPage: React.FC = () => {
     showZeroPopulation: filterSettings.showZeroPopulation,
   }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings]);
 
-  const deckLayers = useMapLayers(stableLocations, layerSettings, palette);
+  const deckLayers = useMapLayers(filteredLocations, layerSettings, palette);
   const regionLayer = useRegionLayer(regionsData, regionConfig);
 
   const allLayers = useMemo(() => {
@@ -205,6 +304,12 @@ export const MapPage: React.FC = () => {
       style: { backgroundColor: '#111', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px' }
     };
   }, []);
+
+  const regionList = useMemo(() => {
+    if (!locations) return [];
+    const uniqueRegions = new Set(locations.map(loc => loc.region));
+    return Array.from(uniqueRegions).sort();
+  }, [locations]);
 
   if (isLoading) {
     return (
@@ -272,6 +377,11 @@ export const MapPage: React.FC = () => {
         onRegionConfigChange={handleRegionConfigChange}
         terrainMode={terrainMode}
         onTerrainModeChange={handleTerrainModeChange}
+        regions={regionList}
+        selectedRegions={selectedRegions}
+        onRegionsSelectionChange={handleRegionsSelectionChange}
+        onCenterRegion={handleCenterRegion}
+        onCenterSelectedRegions={handleCenterSelectedRegions}
       />
       <MapWidget
         ref={mapRef}
