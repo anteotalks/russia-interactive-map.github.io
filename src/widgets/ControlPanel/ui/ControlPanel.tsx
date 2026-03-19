@@ -19,16 +19,14 @@ import CenterFocusWeakIcon from '@mui/icons-material/CenterFocusWeak';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import LandscapeIcon from '@mui/icons-material/Landscape';
 import LayersClearIcon from '@mui/icons-material/LayersClear';
-import SaveIcon from '@mui/icons-material/Save';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { HexColorPicker } from 'react-colorful';
 
 import { PaletteLibrary } from '../../../shared/ui/PaletteLibrary';
 import { GradientPicker } from '../../../shared/ui/GradientPicker';
 import { CameraControls } from '../../../shared/ui/CameraControls';
 import { SliderWithInput } from '../../../shared/ui/SliderWithInput';
-import { RegionList } from '../../../shared/ui/RegionList';
 import { PaletteName } from '../../../entities/palette/lib/constants';
+import { invertPalette } from '../../../shared/lib/color/utils';
 import { GradientConfig } from '../../../entities/palette/lib/types';
 import { CameraSettings } from '../../../shared/types/camera';
 import { LayerConfig } from '../../../shared/lib/hooks/useMapLayersControl';
@@ -91,15 +89,6 @@ interface ControlPanelProps {
   onRegionConfigChange: (newConfig: Partial<RegionLayerConfig>) => void;
   terrainMode: TerrainMode;
   onTerrainModeChange: (mode: TerrainMode) => void;
-  regions: string[];
-  selectedRegions: Set<string>;
-  onRegionsSelectionChange: (regions: Set<string>) => void;
-  onCenterRegion: (region: string) => void;
-  onCenterSelectedRegions: () => void;
-  onSaveSettings: () => void;
-  onResetToDefault: () => void;
-  visiblePointsCount: number;
-  totalPointsCount: number;
 }
 
 const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
@@ -113,10 +102,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
     isVisible, onVisibilityChange, filterSettings, onFilterChange,
     populationMin, populationMax, dynamicsMin, dynamicsMax,
     regionConfig, onRegionConfigChange,
-    terrainMode, onTerrainModeChange,
-    regions, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions,
-    onSaveSettings, onResetToDefault,
-    visiblePointsCount, totalPointsCount,
+    terrainMode, onTerrainModeChange
   } = props;
 
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -182,27 +168,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               <DragIndicatorIcon fontSize="small" color="action" />
               <Typography variant="h6">Настройки карты</Typography>
             </Box>
-            <Box>
-              <Tooltip title="Сохранить настройки">
-                <IconButton size="small" onClick={onSaveSettings} sx={{ mr: 0.5 }}>
-                  <SaveIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Сбросить к заводским">
-                <IconButton size="small" onClick={onResetToDefault} sx={{ mr: 0.5 }}>
-                  <RestartAltIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <IconButton size="small" onClick={toggleVisibility} title="Скрыть панель (Alt)">
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          </Box>
-
-          <Box sx={{ mb: 2, p: 1, bgcolor: 'action.hover', borderRadius: 1, textAlign: 'center' }}>
-            <Typography variant="body2" color="text.secondary">
-              Найдено: <strong>{visiblePointsCount}</strong> из {totalPointsCount} населённых пунктов
-            </Typography>
+            <IconButton size="small" onClick={toggleVisibility} title="Скрыть панель (Alt)"><CloseIcon fontSize="small" /></IconButton>
           </Box>
 
           <Tabs value={activeTab} onChange={handleTabChange} sx={{ mb: 2 }} variant="fullWidth">
@@ -211,7 +177,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
             <Tab icon={<PaletteIcon fontSize="small" />} label="Палитры" />
             <Tab icon={<CenterFocusWeakIcon fontSize="small" />} label="Вид" />
             <Tab icon={<FilterListIcon fontSize="small" />} label="Фильтры" />
-            <Tab icon={<MapIcon fontSize="small" />} label="Регионы" />
           </Tabs>
 
           {activeTab === 0 && (
@@ -240,6 +205,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                 </Box>
               )}
 
+              {/* Показываем выбор года ТОЛЬКО в режиме динамики */}
               {mode === 'dynamics' && (
                 <FormControl fullWidth size="small">
                   <InputLabel>Год переписи</InputLabel>
@@ -318,6 +284,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               </FormGroup>
               <Divider sx={{ my: 1 }} />
               
+              {/* Секция границ регионов */}
               <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle2" color="primary" gutterBottom>Границы регионов</Typography>
                 <FormControlLabel
@@ -414,19 +381,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               <SliderWithInput label="Мин. динамика" value={filterSettings.dynamicsMin} onChange={(val) => onFilterChange({ dynamicsMin: val })} min={dynamicsMin} max={dynamicsMax} step={1} unit="%" />
               <SliderWithInput label="Макс. динамика" value={filterSettings.dynamicsMax} onChange={(val) => onFilterChange({ dynamicsMax: val })} min={dynamicsMin} max={dynamicsMax} step={1} unit="%" />
             </Stack>
-          )}
-
-          {activeTab === 5 && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" color="primary" gutterBottom>Выбор регионов</Typography>
-              <RegionList
-                regions={regions}
-                selectedRegions={selectedRegions}
-                onSelectionChange={onRegionsSelectionChange}
-                onCenterRegion={onCenterRegion}
-                onCenterSelected={onCenterSelectedRegions}
-              />
-            </Box>
           )}
         </Paper>
       </div>

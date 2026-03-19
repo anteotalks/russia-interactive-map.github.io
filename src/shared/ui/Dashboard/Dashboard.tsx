@@ -1,11 +1,26 @@
 import React, { useState } from 'react';
 import {
-  Paper, Typography, Box, IconButton, Divider, Chip, Tabs, Tab,
-  Grid, Card, CardContent, useTheme,
+  Paper,
+  Typography,
+  Box,
+  IconButton,
+  Divider,
+  Chip,
+  Tabs,
+  Tab,
+  Grid,
+  Card,
+  CardContent,
+  useTheme,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
 } from 'recharts';
 import { Location } from '../../../entities/location/lib/types';

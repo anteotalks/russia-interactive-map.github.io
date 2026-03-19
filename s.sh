@@ -1,340 +1,251 @@
 #!/bin/bash
-
-# ПОЛНОЕ ВОССТАНОВЛЕНИЕ ВСЕХ ФАЙЛОВ ДЛЯ ГРАНИЦ ИЗ ТВОЕГО ПРИМЕРА
-
 set -e
 
-echo "🔧 ВОССТАНАВЛИВАЕМ ВСЕ ФАЙЛЫ ДЛЯ ГРАНИЦ..."
+echo "📦 Устанавливаем recharts для графиков..."
+pnpm add recharts
 
-# 1. useRegionLayer (уже есть, но перезапишем для гарантии)
-cat > src/shared/lib/hooks/useRegionLayer.ts << 'EOF'
-/**
- * Хук для слоя границ регионов с корректной обработкой глубины
- * для правильного наложения на точки.
- */
+echo "🏗️ ВОССТАНАВЛИВАЕМ ДАШБОРДЫ (НЕ ТРОГАЯ ГРАНИЦЫ)..."
 
-import { useMemo } from 'react';
-import { GeoJsonLayer } from '@deck.gl/layers';
-import type { FeatureCollection } from 'geojson';
-import { hexToRgb } from '../color/utils';
-import type { RegionLayerConfig } from '../../../entities/region/lib/types';
+# 1. Создаём компонент Dashboard (не трогая useRegionLayer)
+mkdir -p src/shared/ui/Dashboard
 
-export const useRegionLayer = (
-  regionsData: FeatureCollection | null,
-  config: RegionLayerConfig
-): GeoJsonLayer | null => {
-  return useMemo(() => {
-    if (!regionsData || !regionsData.features || regionsData.features.length === 0) {
-      return null;
-    }
-
-    if (!config) return null;
-
-    const lineColorRgb = hexToRgb(config.color);
-
-    return new GeoJsonLayer({
-      id: 'regions-layer',
-      data: regionsData,
-      stroked: true,
-      filled: false,
-      getLineColor: lineColorRgb,
-      getLineWidth: config.width,
-      lineWidthUnits: 'pixels',
-      opacity: config.opacity,
-      visible: config.visible,
-      pickable: false,
-      autoHighlight: false,
-      highlightColor: [0, 0, 0, 0],
-      
-      parameters: {
-        depthMask: false,
-        depthTest: true
-      },
-      
-      updateTriggers: {
-        getLineColor: [config.color],
-        getLineWidth: [config.width],
-        opacity: [config.opacity],
-      },
-      lineWidthMinPixels: 0.5,
-      lineWidthMaxPixels: 10,
-    });
-  }, [regionsData, config.visible, config.color, config.width, config.opacity]);
-};
-EOF
-
-# 2. useMapLayers (основной слой точек)
-cat > src/shared/lib/hooks/useMapLayers.ts << 'EOF'
-/**
- * Хук для слоя точек с фильтрацией по населению, динамике и регионам
- * Использует DataFilterExtension с filterSize: 3
- * Третье измерение – индекс региона для фильтрации по выбранным регионам
- */
-
-import { useMemo, useCallback } from 'react';
-import { ScatterplotLayer } from '@deck.gl/layers';
-import { DataFilterExtension } from '@deck.gl/extensions';
-import type { Color } from '@deck.gl/core';
-import { Location } from '../../../entities/location/lib/types';
+cat > src/shared/ui/Dashboard/Dashboard.tsx << 'EOF'
+import React, { useState } from 'react';
 import {
-  getColorByDynamics,
-  getColorByAbsoluteChange,
-  getAbsoluteChange,
-  getNeutralColor,
-  hexToRgb
-} from '../color/utils';
-import { FilterDirection } from '../../../shared/types/visualization';
+  Paper,
+  Typography,
+  Box,
+  IconButton,
+  Divider,
+  Chip,
+  Tabs,
+  Tab,
+  Grid,
+  Card,
+  CardContent,
+  useTheme,
+} from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+} from 'recharts';
+import { Location } from '../../../entities/location/lib/types';
 
-interface LayerSettings {
+export type DashboardType = 'point' | 'region' | 'selection';
+export type PointDashboardData = { type: 'point'; location: Location };
+export type RegionDashboardData = { type: 'region'; regionName: string; locations: Location[] };
+export type SelectionDashboardData = { type: 'selection'; locations: Location[] };
+export type DashboardData = PointDashboardData | RegionDashboardData | SelectionDashboardData;
+
+interface DashboardProps {
+  open: boolean;
+  data: DashboardData | null;
+  onClose: () => void;
   selectedYear: '2002' | '2010' | '2021';
-  powerCoefficient: number;
-  radiusScale: number;
-  minRadius: number;
+  dynamicsPeriod: '2010-2021' | '2002-2021';
   mode: 'dynamics' | 'absolute';
-  dynamicsPeriod: '2002-2010' | '2010-2021' | '2002-2021';
   absolutePeriod: '2002-2010' | '2010-2021' | '2002-2021';
-  strokeWidth: number;
-  strokeColor: string;
-  fillOpacity: number;
-  populationMin: number;
-  populationMax: number;
-  dynamicsMin: number;
-  dynamicsMax: number;
-  showZeroPopulation: boolean;
-  absoluteFilter: FilterDirection;
-  selectedRegionIndices: Set<number> | null;
-  onClick?: (info: any) => void;
 }
 
-export const useMapLayers = (
-  data: Location[] | null,
-  settings: LayerSettings,
-  palette: string[]
-) => {
-  const strokeRgb = useMemo(() => {
-    try {
-      return hexToRgb(settings.strokeColor);
-    } catch {
-      return [0, 0, 0] as [number, number, number];
-    }
-  }, [settings.strokeColor]);
+const calculateStats = (locations: Location[], selectedYear: '2002' | '2010' | '2021', dynamicsPeriod: '2010-2021' | '2002-2021') => {
+  const count = locations.length;
+  const pop2002 = locations.reduce((s, l) => s + l.population_2002, 0);
+  const pop2010 = locations.reduce((s, l) => s + l.population_2010, 0);
+  const pop2021 = locations.reduce((s, l) => s + l.population_2021, 0);
 
-  const regionToIndexMap = useMemo(() => {
-    if (!data) return new Map<string, number>();
-    const uniqueRegions = Array.from(new Set(data.map(loc => loc.region))).sort();
-    return new Map(uniqueRegions.map((region, index) => [region, index]));
-  }, [data]);
+  const mean2002 = pop2002 / count;
+  const mean2010 = pop2010 / count;
+  const mean2021 = pop2021 / count;
 
-  const getFillColor = useCallback((d: Location): Color => {
-    const pop2002 = d.population_2002;
-    const pop2010 = d.population_2010;
-    const pop2021 = d.population_2021;
+  const sorted2002 = [...locations].sort((a,b) => a.population_2002 - b.population_2002);
+  const median2002 = sorted2002[Math.floor(count/2)].population_2002;
+  const sorted2010 = [...locations].sort((a,b) => a.population_2010 - b.population_2010);
+  const median2010 = sorted2010[Math.floor(count/2)].population_2010;
+  const sorted2021 = [...locations].sort((a,b) => a.population_2021 - b.population_2021);
+  const median2021 = sorted2021[Math.floor(count/2)].population_2021;
 
-    if (settings.mode === 'absolute') {
-      const change = getAbsoluteChange(d, settings.absolutePeriod);
-      return getColorByAbsoluteChange(change, palette, settings.fillOpacity) as Color;
-    }
+  const dynamics = locations.map(l => {
+    const p2002 = l.population_2002;
+    const p2010 = l.population_2010;
+    const p2021 = l.population_2021;
+    if (selectedYear === '2002') return 0;
+    if (selectedYear === '2010') return p2002 > 0 ? ((p2010 - p2002) / p2002) * 100 : 0;
+    if (dynamicsPeriod === '2010-2021') return p2010 > 0 ? ((p2021 - p2010) / p2010) * 100 : 0;
+    return p2002 > 0 ? ((p2021 - p2002) / p2002) * 100 : 0;
+  });
+  const minDynamics = Math.min(...dynamics);
+  const maxDynamics = Math.max(...dynamics);
+  const avgDynamics = dynamics.reduce((a,b) => a+b,0) / dynamics.length;
 
-    if (settings.selectedYear === '2002') {
-      return getNeutralColor(palette, settings.fillOpacity) as Color;
-    }
+  const binCount = 10;
+  const min = Math.min(...dynamics, -0.01);
+  const max = Math.max(...dynamics, 0.01);
+  const step = (max - min) / binCount;
+  const bins = Array(binCount).fill(0);
+  dynamics.forEach(v => {
+    const idx = Math.floor((v - min) / step);
+    if (idx >= 0 && idx < binCount) bins[idx] += 1;
+    else if (v >= max) bins[binCount-1] += 1;
+  });
+  const histogramData = bins.map((c, i) => ({
+    range: `${(min + i*step).toFixed(1)}–${(min + (i+1)*step).toFixed(1)}`,
+    count: c,
+  }));
 
-    if (settings.selectedYear === '2010') {
-      if (pop2002 === 0 || isNaN(pop2002) || !isFinite(pop2002)) {
-        return getNeutralColor(palette, settings.fillOpacity) as Color;
-      }
-      const changePercent = ((pop2010 - pop2002) / pop2002) * 100;
-      return getColorByDynamics(changePercent, palette, settings.fillOpacity) as Color;
-    }
-
-    if (settings.selectedYear === '2021') {
-      if (settings.dynamicsPeriod === '2010-2021') {
-        if (pop2010 === 0 || isNaN(pop2010) || !isFinite(pop2010)) {
-          return getNeutralColor(palette, settings.fillOpacity) as Color;
-        }
-        const changePercent = ((pop2021 - pop2010) / pop2010) * 100;
-        return getColorByDynamics(changePercent, palette, settings.fillOpacity) as Color;
-      } else {
-        if (pop2002 === 0 || isNaN(pop2002) || !isFinite(pop2002)) {
-          return getNeutralColor(palette, settings.fillOpacity) as Color;
-        }
-        const changePercent = ((pop2021 - pop2002) / pop2002) * 100;
-        return getColorByDynamics(changePercent, palette, settings.fillOpacity) as Color;
-      }
-    }
-
-    return getNeutralColor(palette, settings.fillOpacity) as Color;
-  }, [settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod, palette, settings.fillOpacity]);
-
-  const getRadius = useCallback((d: Location): number => {
-    if (settings.mode === 'absolute') {
-      const change = Math.abs(getAbsoluteChange(d, settings.absolutePeriod));
-      if (change === 0 || isNaN(change) || !isFinite(change)) {
-        return settings.minRadius;
-      }
-      return Math.pow(change, settings.powerCoefficient);
-    }
-
-    const pop = d[`population_${settings.selectedYear}`];
-    if (pop === 0 || isNaN(pop) || !isFinite(pop)) {
-      return settings.minRadius;
-    }
-    return Math.pow(pop, settings.powerCoefficient);
-  }, [settings.selectedYear, settings.powerCoefficient, settings.mode, settings.absolutePeriod, settings.minRadius]);
-
-  const getLineWidth = useCallback((_d: Location): number => {
-    return settings.strokeWidth;
-  }, [settings.strokeWidth]);
-
-  const getFilterValue = useCallback((d: Location): [number, number, number] => {
-    const pop = d[`population_${settings.selectedYear}`] || 0;
-    const regionIndex = regionToIndexMap.get(d.region) ?? -1;
-
-    let dynamicsPercent = 0;
-    const pop2002 = d.population_2002;
-    const pop2010 = d.population_2010;
-    const pop2021 = d.population_2021;
-
-    if (settings.mode === 'absolute') {
-      let change = 0;
-      if (settings.absolutePeriod === '2002-2010') {
-        if (pop2002 > 0) change = pop2010 - pop2002;
-      } else if (settings.absolutePeriod === '2010-2021') {
-        if (pop2010 > 0) change = pop2021 - pop2010;
-      } else {
-        if (pop2002 > 0) change = pop2021 - pop2002;
-      }
-      dynamicsPercent = pop2002 > 0 ? (change / pop2002) * 100 : 0;
-    } else {
-      if (settings.selectedYear === '2010') {
-        if (pop2002 > 0) dynamicsPercent = ((pop2010 - pop2002) / pop2002) * 100;
-      } else if (settings.selectedYear === '2021') {
-        if (settings.dynamicsPeriod === '2010-2021') {
-          if (pop2010 > 0) dynamicsPercent = ((pop2021 - pop2010) / pop2010) * 100;
-        } else {
-          if (pop2002 > 0) dynamicsPercent = ((pop2021 - pop2002) / pop2002) * 100;
-        }
-      }
-    }
-
-    return [pop, dynamicsPercent, regionIndex];
-  }, [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod, regionToIndexMap]);
-
-  const filterRange = useMemo((): [number, number][] => {
-    const popMin = settings.populationMin > 0 ? settings.populationMin : -Infinity;
-    const popMax = settings.populationMax > 0 ? settings.populationMax : Infinity;
-    const effectivePopMin = settings.showZeroPopulation ? popMin : Math.max(popMin, 0.1);
-
-    let dynMin = settings.dynamicsMin;
-    let dynMax = settings.dynamicsMax;
-
-    if (settings.mode === 'absolute') {
-      if (settings.absoluteFilter === 'growth') {
-        dynMin = 0.001;
-        dynMax = Infinity;
-      } else if (settings.absoluteFilter === 'decline') {
-        dynMin = -Infinity;
-        dynMax = -0.001;
-      }
-    }
-
-    let regionMin = -Infinity;
-    let regionMax = Infinity;
-
-    if (settings.selectedRegionIndices && settings.selectedRegionIndices.size > 0) {
-      const indicesArray = Array.from(settings.selectedRegionIndices);
-      if (indicesArray.length > 0) {
-        regionMin = Math.min(...indicesArray);
-        regionMax = Math.max(...indicesArray);
-      } else {
-        regionMin = -Infinity;
-        regionMax = Infinity;
-      }
-    }
-
-    return [
-      [effectivePopMin, popMax],
-      [dynMin, dynMax],
-      [regionMin, regionMax]
-    ];
-  }, [
-    settings.populationMin, settings.populationMax, settings.showZeroPopulation,
-    settings.dynamicsMin, settings.dynamicsMax,
-    settings.mode, settings.absoluteFilter,
-    settings.selectedRegionIndices
-  ]);
-
-  const filterExtension = useMemo(() => new DataFilterExtension({ filterSize: 3 }), []);
-
-  const layer = useMemo(() => {
-    if (!data || data.length === 0) return null;
-
-    return new ScatterplotLayer<Location>({
-      id: 'locations-layer',
-      data,
-      getPosition: (d: Location) => [d.longitude, d.latitude],
-      getFillColor,
-      getRadius,
-      stroked: settings.strokeWidth > 0,
-      getLineColor: [...strokeRgb, 255] as Color,
-      getLineWidth,
-      radiusScale: settings.radiusScale,
-      lineWidthUnits: 'pixels',
-      lineWidthScale: 1,
-      lineWidthMinPixels: settings.strokeWidth > 0 ? 0.5 : 0,
-      lineWidthMaxPixels: 10,
-      radiusMinPixels: settings.minRadius,
-      extensions: [filterExtension],
-      getFilterValue,
-      filterRange,
-      pickable: true,
-      autoHighlight: false,
-      highlightColor: [0, 0, 0, 0],
-      onClick: settings.onClick,
-      updateTriggers: {
-        getFillColor: [settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod, palette, settings.fillOpacity],
-        getRadius: [settings.selectedYear, settings.powerCoefficient, settings.mode, settings.absolutePeriod, settings.minRadius],
-        stroked: [settings.strokeWidth],
-        getLineColor: [settings.strokeColor],
-        getLineWidth: [settings.strokeWidth],
-        getFilterValue: [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod, regionToIndexMap],
-        filterRange: [
-          settings.populationMin, settings.populationMax, settings.showZeroPopulation,
-          settings.dynamicsMin, settings.dynamicsMax,
-          settings.mode, settings.absoluteFilter,
-          settings.selectedRegionIndices
-        ],
-        onClick: [settings.onClick],
-      },
-      parameters: {
-        depthWriteEnabled: false,
-        depthCompare: 'always'
-      } as const,
-    });
-  }, [
-    data, getFillColor, getRadius, getLineWidth,
-    settings.radiusScale, settings.minRadius,
-    settings.strokeWidth, settings.strokeColor, strokeRgb,
-    filterExtension, getFilterValue, filterRange,
-    settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod,
-    settings.powerCoefficient, palette, settings.fillOpacity,
-    settings.populationMin, settings.populationMax, settings.showZeroPopulation,
-    settings.dynamicsMin, settings.dynamicsMax,
-    settings.absoluteFilter,
-    settings.selectedRegionIndices,
-    regionToIndexMap,
-    settings.onClick,
-  ]);
-
-  return useMemo(() => (layer ? [layer] : []), [layer]);
+  return {
+    count,
+    pop2002, pop2010, pop2021,
+    mean2002, mean2010, mean2021,
+    median2002, median2010, median2021,
+    minDynamics, maxDynamics, avgDynamics,
+    histogramData,
+  };
 };
+
+export const Dashboard: React.FC<DashboardProps> = ({
+  open, data, onClose, selectedYear, dynamicsPeriod, mode, absolutePeriod
+}) => {
+  const theme = useTheme();
+  const [tabIndex, setTabIndex] = useState(0);
+  if (!open || !data) return null;
+
+  const renderPoint = (d: PointDashboardData) => {
+    const loc = d.location;
+    const popData = [
+      { year: '2002', population: loc.population_2002 },
+      { year: '2010', population: loc.population_2010 },
+      { year: '2021', population: loc.population_2021 },
+    ];
+    return (
+      <>
+        <Typography variant="h5" gutterBottom>{loc.populated_place}</Typography>
+        <Chip label={loc.region} size="small" sx={{ mb: 3 }} />
+        <Typography variant="subtitle1" gutterBottom>Население по годам</Typography>
+        <ResponsiveContainer width="100%" height={250}>
+          <BarChart data={popData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="year" />
+            <YAxis />
+            <RechartsTooltip />
+            <Bar dataKey="population" fill={theme.palette.primary.main} />
+          </BarChart>
+        </ResponsiveContainer>
+      </>
+    );
+  };
+
+  const renderRegionOrSelection = (title: string, locs: Location[]) => {
+    const stats = calculateStats(locs, selectedYear, dynamicsPeriod);
+    const popData = [
+      { year: '2002', population: stats.pop2002 },
+      { year: '2010', population: stats.pop2010 },
+      { year: '2021', population: stats.pop2021 },
+    ];
+    return (
+      <>
+        <Typography variant="h5" gutterBottom>{title}</Typography>
+        <Typography variant="body2" color="text.secondary" gutterBottom>
+          Населенных пунктов: {stats.count}
+        </Typography>
+        <Tabs value={tabIndex} onChange={(_,v) => setTabIndex(v)} sx={{ mb: 2 }}>
+          <Tab label="Население" />
+          <Tab label="Динамика" />
+          <Tab label="Статистика" />
+        </Tabs>
+        {tabIndex === 0 && (
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={popData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="year" />
+              <YAxis />
+              <RechartsTooltip />
+              <Bar dataKey="population" fill={theme.palette.primary.main} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        {tabIndex === 1 && (
+          <>
+            <Typography variant="subtitle2" gutterBottom>
+              Мин: {stats.minDynamics.toFixed(1)}% | Макс: {stats.maxDynamics.toFixed(1)}% | Среднее: {stats.avgDynamics.toFixed(1)}%
+            </Typography>
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={stats.histogramData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="range" angle={-45} textAnchor="end" height={70} interval={0} />
+                <YAxis />
+                <RechartsTooltip />
+                <Bar dataKey="count" fill={theme.palette.secondary.main} />
+              </BarChart>
+            </ResponsiveContainer>
+          </>
+        )}
+        {tabIndex === 2 && (
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <Card variant="outlined"><CardContent>
+                <Typography variant="subtitle2">Среднее</Typography>
+                <Typography>2002: {stats.mean2002.toFixed(0)}</Typography>
+                <Typography>2010: {stats.mean2010.toFixed(0)}</Typography>
+                <Typography>2021: {stats.mean2021.toFixed(0)}</Typography>
+              </CardContent></Card>
+            </Grid>
+            <Grid item xs={6}>
+              <Card variant="outlined"><CardContent>
+                <Typography variant="subtitle2">Медиана</Typography>
+                <Typography>2002: {stats.median2002}</Typography>
+                <Typography>2010: {stats.median2010}</Typography>
+                <Typography>2021: {stats.median2021}</Typography>
+              </CardContent></Card>
+            </Grid>
+          </Grid>
+        )}
+      </>
+    );
+  };
+
+  return (
+    <Paper sx={{
+      position: 'absolute', bottom: 20, right: 20,
+      width: { xs: '90%', sm: 500, md: 600 },
+      maxHeight: '80vh', overflow: 'auto', zIndex: 1300,
+      p: 3, boxShadow: theme.shadows[10], borderRadius: 2,
+    }}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+        <Typography variant="h6">
+          {data.type === 'point' && 'Населённый пункт'}
+          {data.type === 'region' && 'Регион'}
+          {data.type === 'selection' && 'Выделенная область'}
+        </Typography>
+        <IconButton size="small" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>
+      </Box>
+      <Divider sx={{ mb: 3 }} />
+      {data.type === 'point' && renderPoint(data)}
+      {data.type === 'region' && renderRegionOrSelection(data.regionName, data.locations)}
+      {data.type === 'selection' && renderRegionOrSelection('Выделенная область', data.locations)}
+    </Paper>
+  );
+};
+
+export default Dashboard;
 EOF
 
-# 3. MapPage (самый важный - там правильное объединение слоёв)
+cat > src/shared/ui/Dashboard/index.ts << 'EOF'
+export { default } from './Dashboard';
+export type { DashboardData, DashboardType } from './Dashboard';
+EOF
+echo "✅ src/shared/ui/Dashboard/"
+
+# 2. Обновляем MapPage.tsx - добавляем дашборд, НЕ ТРОГАЯ useRegionLayer
 cat > src/pages/MapPage/ui/MapPage.tsx << 'EOF'
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { FeatureCollection } from 'geojson';
-import { FlyToInterpolator } from '@deck.gl/core';
+import { FlyToInterpolator, PickingInfo } from '@deck.gl/core';
 import { fetchRegionsFromGeoJSON } from '../../../entities/region';
 import { DEFAULT_REGION_CONFIG, RegionLayerConfig } from '../../../entities/region/lib/types';
 import { useRegionLayer } from '../../../shared/lib/hooks/useRegionLayer';
@@ -343,16 +254,13 @@ import { ControlPanel, DynamicsPeriod, YearType, VisualizationMode, FilterDirect
 import { fetchLocationsFromCSV } from '../../../entities/location/api/locationApi';
 import type { Location } from '../../../entities/location/lib/types';
 import { useMapLayers } from '../../../shared/lib/hooks/useMapLayers';
-import type { PickingInfo } from '@deck.gl/core';
 import { useAltKeyPress } from '../../../shared/lib/hooks';
 import { useMapLayersControl } from '../../../shared/lib/hooks/useMapLayersControl';
 import { ALL_BASE_LAYERS } from '../lib/mapLayers';
 import { usePalette } from '../../../shared/lib/hooks/usePalette';
 import { useCamera } from '../../../shared/lib/hooks/useCamera';
-import { DEFAULT_FILTER_SETTINGS, FilterSettings, SelectedRegions } from '../../../shared/types/visualization';
+import { DEFAULT_FILTER_SETTINGS, FilterSettings } from '../../../shared/types/visualization';
 import type { PaletteName } from '../../../entities/palette/lib/constants';
-import { AppSettings, DEFAULT_SETTINGS } from '../../../shared/types/settings';
-import Watermark from '../../../shared/ui/Watermark';
 import Dashboard, { DashboardData } from '../../../shared/ui/Dashboard';
 
 export interface VisualizationSettings {
@@ -364,8 +272,6 @@ export interface VisualizationSettings {
   strokeColor: string;
   fillOpacity: number;
 }
-
-const STORAGE_KEY = 'map_app_settings';
 
 const defaultSettings: VisualizationSettings = {
   selectedYear: '2021',
@@ -396,112 +302,32 @@ const getDynamicsExtents = (locations: Location[]): [number, number] => {
   return [min === Infinity ? -100 : Math.floor(min), max === -Infinity ? 100 : Math.ceil(max)];
 };
 
-const calculateBoundsForRegions = (
-  regions: Set<string>,
-  locations: Location[] | null
-): { minLat: number; maxLat: number; minLon: number; maxLon: number } | null => {
-  if (!locations || regions.size === 0) return null;
-
-  let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
-  let found = false;
-
-  locations.forEach(loc => {
-    if (regions.has(loc.region)) {
-      minLat = Math.min(minLat, loc.latitude);
-      maxLat = Math.max(maxLat, loc.latitude);
-      minLon = Math.min(minLon, loc.longitude);
-      maxLon = Math.max(maxLon, loc.longitude);
-      found = true;
-    }
-  });
-
-  if (!found) return null;
-  return { minLat, maxLat, minLon, maxLon };
-};
-
 export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  
-  const loadSavedSettings = useCallback((): AppSettings => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved) as AppSettings;
-        if (parsed.version === DEFAULT_SETTINGS.version) {
-          return parsed;
-        }
-      }
-    } catch (error) {
-      console.error('Ошибка загрузки настроек из localStorage:', error);
-    }
-    return DEFAULT_SETTINGS;
-  }, []);
+  const [settings, setSettings] = useState<VisualizationSettings>(defaultSettings);
+  const [mode, setMode] = useState<VisualizationMode>('dynamics');
+  const [dynamicsMode, setDynamicsMode] = useState<'2010-2021' | '2002-2021'>('2010-2021');
+  const [absolutePeriod, setAbsolutePeriod] = useState<DynamicsPeriod>('2002-2021');
+  const [absoluteFilter, setAbsoluteFilter] = useState<FilterDirection>('all');
+  const [isPanelVisible, setIsPanelVisible] = useState(true);
+  const [filterSettings, setFilterSettings] = useState<FilterSettings>(DEFAULT_FILTER_SETTINGS);
+  const [populationMax, setPopulationMax] = useState(10000000);
+  const [dynamicsMin, setDynamicsMin] = useState(-100);
+  const [dynamicsMax, setDynamicsMax] = useState(100);
+  const [terrainMode, setTerrainMode] = useState<TerrainMode>('hillshade');
 
-  const [settings, setSettings] = useState<VisualizationSettings>(() => 
-    loadSavedSettings().visualization
-  );
-  const [mode, setMode] = useState<VisualizationMode>(() => 
-    loadSavedSettings().mode
-  );
-  const [dynamicsMode, setDynamicsMode] = useState<'2010-2021' | '2002-2021'>(() => 
-    loadSavedSettings().dynamicsMode as '2010-2021' | '2002-2021'
-  );
-  const [absolutePeriod, setAbsolutePeriod] = useState<DynamicsPeriod>(() => 
-    loadSavedSettings().absolutePeriod
-  );
-  const [absoluteFilter, setAbsoluteFilter] = useState<FilterDirection>(() => 
-    loadSavedSettings().absoluteFilter
-  );
-  const [isPanelVisible, setIsPanelVisible] = useState(() => 
-    loadSavedSettings().panelVisible
-  );
-  const [filterSettings, setFilterSettings] = useState<FilterSettings>(() => 
-    loadSavedSettings().filterSettings
-  );
-  const [terrainMode, setTerrainMode] = useState<TerrainMode>(() => 
-    loadSavedSettings().terrainMode
-  );
-  const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(() => 
-    loadSavedSettings().regionConfig
-  );
-  const [selectedRegions, setSelectedRegions] = useState<SelectedRegions>(() => 
-    new Set(loadSavedSettings().selectedRegions)
-  );
+  const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
+  const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
 
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(false);
 
   const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
-  
-  useEffect(() => {
-    const saved = loadSavedSettings();
-    if (saved.paletteName !== 'custom') {
-      selectPalette(saved.paletteName);
-    }
-  }, []);
-
-  const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera(() => 
-    loadSavedSettings().camera
-  );
-  
-  const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = 
-    useMapLayersControl(ALL_BASE_LAYERS);
-
-  useEffect(() => {
-    const saved = loadSavedSettings();
-    const savedLayer = ALL_BASE_LAYERS.find(l => l.id === saved.visibleBaseLayer);
-    if (savedLayer && !savedLayer.visible) {
-      toggleLayer(savedLayer.id);
-    }
-  }, []);
-
-  const [populationMax, setPopulationMax] = useState(10000000);
-  const [dynamicsMin, setDynamicsMin] = useState(-100);
-  const [dynamicsMax, setDynamicsMax] = useState(100);
+  const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
+  const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
 
   const activeRequests = useRef(0);
-  const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -535,11 +361,7 @@ export const MapPage: React.FC = () => {
     };
 
     load();
-
-    return () => {
-      ignore = true;
-      controller.abort();
-    };
+    return () => { ignore = true; controller.abort(); };
   }, []);
 
   useEffect(() => {
@@ -559,13 +381,8 @@ export const MapPage: React.FC = () => {
         }
       }
     };
-
     load();
-
-    return () => {
-      ignore = true;
-      controller.abort();
-    };
+    return () => { ignore = true; controller.abort(); };
   }, []);
 
   const handleMapViewStateChange = useCallback((newViewState: any) => handleViewStateChange(newViewState), [handleViewStateChange]);
@@ -584,90 +401,25 @@ export const MapPage: React.FC = () => {
   }, []);
   
   const handleTerrainModeChange = useCallback((mode: TerrainMode) => setTerrainMode(mode), []);
-  const handleRegionsSelectionChange = useCallback((newSelection: Set<string>) => {
-    setSelectedRegions(newSelection);
-  }, []);
 
-  const handleCenterRegion = useCallback((region: string) => {
-    const bounds = calculateBoundsForRegions(new Set([region]), locations);
-    if (!bounds) return;
+  const handleMapClick = useCallback((info: PickingInfo) => {
+    if (!info.picked) return;
+    if (info.layer?.id === 'locations-layer' && info.object) {
+      setDashboardData({ type: 'point', location: info.object as Location });
+      setDashboardOpen(true);
+    } else if (info.layer?.id === 'regions-layer' && info.object) {
+      const feature = info.object as FeatureCollection['features'][0];
+      const regionName = feature.properties?.name_rus;
+      if (!regionName || !locations) return;
+      const regionLocations = locations.filter(loc => loc.region === regionName);
+      setDashboardData({ type: 'region', regionName, locations: regionLocations });
+      setDashboardOpen(true);
+    }
+  }, [locations]);
 
-    const { minLat, maxLat, minLon, maxLon } = bounds;
-    const centerLat = (minLat + maxLat) / 2;
-    const centerLon = (minLon + maxLon) / 2;
-
-    const latDiff = maxLat - minLat;
-    const lonDiff = maxLon - minLon;
-    const maxDiff = Math.max(latDiff, lonDiff);
-    
-    let zoom = 5;
-    if (maxDiff > 20) zoom = 3;
-    else if (maxDiff > 10) zoom = 4;
-    else if (maxDiff > 5) zoom = 5;
-    else if (maxDiff > 2) zoom = 6;
-    else if (maxDiff > 1) zoom = 7;
-    else if (maxDiff > 0.5) zoom = 8;
-    else if (maxDiff > 0.2) zoom = 9;
-    else zoom = 10;
-
-    updateViewState({
-      longitude: centerLon,
-      latitude: centerLat,
-      zoom,
-      transitionInterpolator: new FlyToInterpolator({ speed: 1.5 }),
-      transitionDuration: 2000,
-    });
-  }, [locations, updateViewState]);
-
-  const handleCenterSelectedRegions = useCallback(() => {
-    if (selectedRegions.size === 0) return;
-    
-    const bounds = calculateBoundsForRegions(selectedRegions, locations);
-    if (!bounds) return;
-
-    const { minLat, maxLat, minLon, maxLon } = bounds;
-    const centerLat = (minLat + maxLat) / 2;
-    const centerLon = (minLon + maxLon) / 2;
-
-    const latDiff = maxLat - minLat;
-    const lonDiff = maxLon - minLon;
-    const maxDiff = Math.max(latDiff, lonDiff);
-    
-    let zoom = 5;
-    if (maxDiff > 20) zoom = 3;
-    else if (maxDiff > 10) zoom = 4;
-    else if (maxDiff > 5) zoom = 5;
-    else if (maxDiff > 2) zoom = 6;
-    else if (maxDiff > 1) zoom = 7;
-    else if (maxDiff > 0.5) zoom = 8;
-    else if (maxDiff > 0.2) zoom = 9;
-    else zoom = 10;
-
-    updateViewState({
-      longitude: centerLon,
-      latitude: centerLat,
-      zoom,
-      transitionInterpolator: new FlyToInterpolator({ speed: 1.5 }),
-      transitionDuration: 2000,
-    });
-  }, [selectedRegions, locations, updateViewState]);
+  const handleCloseDashboard = useCallback(() => setDashboardOpen(false), []);
 
   const stableLocations = useMemo(() => locations, [locations]);
-
-  const filteredLocations = useMemo(() => {
-    if (!stableLocations) return null;
-    if (selectedRegions.size === 0) return stableLocations;
-    return stableLocations.filter(loc => selectedRegions.has(loc.region));
-  }, [stableLocations, selectedRegions]);
-
-  const visibleLocations = filteredLocations;
-
-  const handleLayerClick = useCallback((info: any) => {
-    if (!info.object) return;
-    const location = info.object as Location;
-    setDashboardData({ type: 'point', location });
-    setDashboardOpen(true);
-  }, []);
 
   const layerSettings = useMemo(() => ({
     selectedYear: settings.selectedYear,
@@ -686,11 +438,9 @@ export const MapPage: React.FC = () => {
     dynamicsMin: filterSettings.dynamicsMin,
     dynamicsMax: filterSettings.dynamicsMax,
     showZeroPopulation: filterSettings.showZeroPopulation,
-    onClick: handleLayerClick,
-    selectedRegionIndices: null,
-  }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings, handleLayerClick]);
+  }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings]);
 
-  const deckLayers = useMapLayers(visibleLocations, layerSettings, palette);
+  const deckLayers = useMapLayers(stableLocations, layerSettings, palette);
   const regionLayer = useRegionLayer(regionsData, regionConfig);
 
   const allLayers = useMemo(() => {
@@ -720,58 +470,6 @@ export const MapPage: React.FC = () => {
     };
   }, []);
 
-  const regionList = useMemo(() => {
-    if (!locations) return [];
-    const uniqueRegions = new Set(locations.map(loc => loc.region));
-    return Array.from(uniqueRegions).sort();
-  }, [locations]);
-
-  useEffect(() => {
-    if (isLoading) return;
-
-    const settingsToSave: AppSettings = {
-      version: DEFAULT_SETTINGS.version,
-      selectedYear: settings.selectedYear,
-      mode,
-      dynamicsMode,
-      absolutePeriod,
-      absoluteFilter,
-      visualization: settings,
-      paletteName: selectedName,
-      customGradient,
-      paletteInverted: false,
-      filterSettings,
-      regionConfig,
-      selectedRegions: Array.from(selectedRegions),
-      visibleBaseLayer: baseLayer.id,
-      terrainMode,
-      camera: cameraSettings,
-      panelVisible: isPanelVisible,
-    };
-
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settingsToSave));
-    } catch (error) {
-      console.error('Ошибка сохранения настроек в localStorage:', error);
-    }
-  }, [
-    settings, mode, dynamicsMode, absolutePeriod, absoluteFilter,
-    selectedName, customGradient, filterSettings, regionConfig,
-    selectedRegions, baseLayer, terrainMode, cameraSettings, isPanelVisible,
-    isLoading
-  ]);
-
-  const handleResetToDefault = useCallback(() => {
-    if (window.confirm('Сбросить все настройки к значениям по умолчанию?')) {
-      localStorage.removeItem(STORAGE_KEY);
-      window.location.reload();
-    }
-  }, []);
-
-  const handleSaveSettings = useCallback(() => {
-    alert('Настройки сохранены');
-  }, []);
-
   if (isLoading) {
     return (
       <div style={{
@@ -798,7 +496,6 @@ export const MapPage: React.FC = () => {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <Watermark />
       <ControlPanel
         settings={settings}
         onSettingsChange={handleSettingsChange}
@@ -839,15 +536,6 @@ export const MapPage: React.FC = () => {
         onRegionConfigChange={handleRegionConfigChange}
         terrainMode={terrainMode}
         onTerrainModeChange={handleTerrainModeChange}
-        regions={regionList}
-        selectedRegions={selectedRegions}
-        onRegionsSelectionChange={handleRegionsSelectionChange}
-        onCenterRegion={handleCenterRegion}
-        onCenterSelectedRegions={handleCenterSelectedRegions}
-        onSaveSettings={handleSaveSettings}
-        onResetToDefault={handleResetToDefault}
-        visiblePointsCount={visibleLocations?.length ?? 0}
-        totalPointsCount={locations?.length ?? 0}
       />
       <MapWidget
         ref={mapRef}
@@ -855,13 +543,14 @@ export const MapPage: React.FC = () => {
         terrainMode={terrainMode}
         layers={allLayers}
         getTooltip={getTooltip}
+        onClick={handleMapClick}
         viewState={viewState}
         onViewStateChange={handleMapViewStateChange}
       />
       <Dashboard
         open={dashboardOpen}
         data={dashboardData}
-        onClose={() => setDashboardOpen(false)}
+        onClose={handleCloseDashboard}
         selectedYear={settings.selectedYear}
         dynamicsPeriod={dynamicsMode}
         mode={mode}
@@ -873,6 +562,176 @@ export const MapPage: React.FC = () => {
 
 export default MapPage;
 EOF
+echo "✅ src/pages/MapPage/ui/MapPage.tsx (дашборд добавлен)"
 
-echo "✅ ВСЁ ВОССТАНОВЛЕНО!"
-echo "🚀 Запусти: pnpm dev"
+# 3. Обновляем MapWidget.tsx для поддержки onClick
+cat > src/widgets/Map/ui/MapWidget.tsx << 'EOF'
+/**
+ * MapWidget - компонент карты с поддержкой onClick
+ */
+
+import React, { forwardRef, useEffect, useRef, useCallback } from 'react';
+import Map, { MapRef, useControl } from 'react-map-gl/maplibre';
+import { MapboxOverlay } from '@deck.gl/mapbox';
+import type { MapboxOverlayProps } from '@deck.gl/mapbox';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import type { Layer, PickingInfo } from '@deck.gl/core';
+import type { LayerConfig } from '../../../shared/types/map';
+import { NavigationControl } from 'react-map-gl/maplibre';
+import { buildMapStyle } from '../../../shared/lib/map/buildMapStyle';
+import { TerrainDem } from '../lib/TerrainDem';
+import { HillshadeDem } from '../lib/HillshadeDem';
+
+export type TerrainMode = 'none' | 'hillshade' | '3d';
+
+interface MapWidgetProps {
+  layers: Layer[];
+  getTooltip?: (info: PickingInfo) => any;
+  onClick?: (info: PickingInfo) => void;
+  viewState?: {
+    longitude: number;
+    latitude: number;
+    zoom: number;
+    pitch?: number;
+    bearing?: number;
+  };
+  initialViewState?: {
+    longitude: number;
+    latitude: number;
+    zoom: number;
+    pitch?: number;
+    bearing?: number;
+  };
+  baseLayer: LayerConfig;
+  terrainMode: TerrainMode;
+  onViewStateChange?: (viewState: any) => void;
+}
+
+function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
+  const overlay = useControl<MapboxOverlay>(
+    () => new MapboxOverlay({ ...props, interleaved: true }),
+  );
+  overlay.setProps(props);
+  return null;
+}
+
+function throttle<T extends (...args: any[]) => any>(func: T, limit: number): T {
+  let inThrottle: boolean;
+  return ((...args: any[]) => {
+    if (!inThrottle) {
+      func(...args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  }) as T;
+}
+
+export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
+  layers,
+  getTooltip,
+  onClick,
+  viewState,
+  initialViewState,
+  baseLayer,
+  terrainMode,
+  onViewStateChange,
+}, ref) => {
+  const mapStyle = React.useMemo(() => buildMapStyle(baseLayer), [baseLayer]);
+  const terrainProps = terrainMode === '3d' ? { source: 'terrain-dem', exaggeration: 1.5 } : undefined;
+  
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRefLocal = useRef<MapRef | null>(null);
+
+  const handleResize = useCallback(() => {
+    if (mapRefLocal.current) {
+      mapRefLocal.current.resize();
+    }
+  }, []);
+
+  const throttledResize = useCallback(throttle(handleResize, 100), [handleResize]);
+
+  useEffect(() => {
+    window.addEventListener('resize', throttledResize);
+    return () => window.removeEventListener('resize', throttledResize);
+  }, [throttledResize]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver(() => throttledResize());
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [throttledResize]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(handleResize, 100);
+    return () => clearTimeout(timeoutId);
+  }, [handleResize]);
+
+  useEffect(() => {
+    console.info(`🌍 Режим рельефа: ${terrainMode}`);
+  }, [terrainMode]);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden'
+      }}
+    >
+      <Map
+        ref={(node) => {
+          mapRefLocal.current = node;
+          if (typeof ref === 'function') ref(node);
+          else if (ref) ref.current = node;
+        }}
+        mapStyle={mapStyle}
+        {...(viewState ? viewState : {})}
+        initialViewState={!viewState ? initialViewState : undefined}
+        onMove={onViewStateChange ? (evt) => onViewStateChange(evt.viewState) : undefined}
+        maxPitch={85}
+        attributionControl={false}
+        maxTileCacheSize={200}
+        maxTileCacheZoomLevels={8}
+        validateStyle={process.env.NODE_ENV === "production" ? false : undefined}
+        onLoad={() => {
+          console.log('✅ MapLibre карта загружена');
+          handleResize();
+        }}
+        onError={(e) => console.error('❌ Ошибка MapLibre:', e)}
+        style={{ width: '100%', height: '100%' }}
+        terrain={terrainProps}
+      >
+        <TerrainDem />
+        {terrainMode === 'hillshade' && <HillshadeDem />}
+        <NavigationControl position="top-right" />
+        <DeckGLOverlay
+          layers={layers}
+          getTooltip={getTooltip}
+          onClick={onClick}
+          interleaved
+        />
+      </Map>
+    </div>
+  );
+});
+
+MapWidget.displayName = 'MapWidget';
+export default MapWidget;
+EOF
+echo "✅ src/widgets/Map/ui/MapWidget.tsx (onClick добавлен)"
+
+echo ""
+echo "🎉 ДАШБОРДЫ ВОССТАНОВЛЕНЫ!"
+echo "✅ useRegionLayer НЕ ТРОГАЛИ - границы работают как были"
+echo "✅ Dashboard добавлен"
+echo "✅ MapPage обновлён с onClick и Dashboard"
+echo "✅ MapWidget обновлён с onClick"
+echo ""
+echo "🚀 Перезапустите проект: pnpm dev"

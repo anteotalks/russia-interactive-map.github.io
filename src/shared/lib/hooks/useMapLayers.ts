@@ -1,7 +1,6 @@
 /**
- * Хук для слоя точек с фильтрацией по населению, динамике и регионам
- * Использует DataFilterExtension с filterSize: 3
- * Третье измерение – индекс региона для фильтрации по выбранным регионам
+ * Хук для слоя точек с отключённой подсветкой
+ * Добавлен фильтр по направлению изменения (growth/decline) для абсолютного режима
  */
 
 import { useMemo, useCallback } from 'react';
@@ -35,8 +34,6 @@ interface LayerSettings {
   dynamicsMax: number;
   showZeroPopulation: boolean;
   absoluteFilter: FilterDirection;
-  selectedRegionIndices: Set<number> | null;
-  onClick?: (info: any) => void;
 }
 
 export const useMapLayers = (
@@ -51,12 +48,6 @@ export const useMapLayers = (
       return [0, 0, 0] as [number, number, number];
     }
   }, [settings.strokeColor]);
-
-  const regionToIndexMap = useMemo(() => {
-    if (!data) return new Map<string, number>();
-    const uniqueRegions = Array.from(new Set(data.map(loc => loc.region))).sort();
-    return new Map(uniqueRegions.map((region, index) => [region, index]));
-  }, [data]);
 
   const getFillColor = useCallback((d: Location): Color => {
     const pop2002 = d.population_2002;
@@ -121,9 +112,9 @@ export const useMapLayers = (
 
   const getFilterValue = useCallback((d: Location): [number, number, number] => {
     const pop = d[`population_${settings.selectedYear}`] || 0;
-    const regionIndex = regionToIndexMap.get(d.region) ?? -1;
 
     let dynamicsPercent = 0;
+    let sign = 0;
     const pop2002 = d.population_2002;
     const pop2010 = d.population_2010;
     const pop2021 = d.population_2021;
@@ -138,6 +129,7 @@ export const useMapLayers = (
         if (pop2002 > 0) change = pop2021 - pop2002;
       }
       dynamicsPercent = pop2002 > 0 ? (change / pop2002) * 100 : 0;
+      sign = Math.sign(change);
     } else {
       if (settings.selectedYear === '2010') {
         if (pop2002 > 0) dynamicsPercent = ((pop2010 - pop2002) / pop2002) * 100;
@@ -148,53 +140,39 @@ export const useMapLayers = (
           if (pop2002 > 0) dynamicsPercent = ((pop2021 - pop2002) / pop2002) * 100;
         }
       }
+      sign = 0;
     }
 
-    return [pop, dynamicsPercent, regionIndex];
-  }, [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod, regionToIndexMap]);
+    return [pop, dynamicsPercent, sign];
+  }, [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod]);
 
-  const filterRange = useMemo((): [number, number][] => {
+  const filterRange: [number, number][] = useMemo(() => {
     const popMin = settings.populationMin > 0 ? settings.populationMin : -Infinity;
     const popMax = settings.populationMax > 0 ? settings.populationMax : Infinity;
     const effectivePopMin = settings.showZeroPopulation ? popMin : Math.max(popMin, 0.1);
 
-    let dynMin = settings.dynamicsMin;
-    let dynMax = settings.dynamicsMax;
-
+    let signRange: [number, number];
     if (settings.mode === 'absolute') {
-      if (settings.absoluteFilter === 'growth') {
-        dynMin = 0.001;
-        dynMax = Infinity;
-      } else if (settings.absoluteFilter === 'decline') {
-        dynMin = -Infinity;
-        dynMax = -0.001;
+      switch (settings.absoluteFilter) {
+        case 'growth': signRange = [1, 1]; break;
+        case 'decline': signRange = [-1, -1]; break;
+        case 'all':
+        default: signRange = [-1, 1]; break;
       }
-    }
-
-    let regionMin = -Infinity;
-    let regionMax = Infinity;
-
-    if (settings.selectedRegionIndices && settings.selectedRegionIndices.size > 0) {
-      const indicesArray = Array.from(settings.selectedRegionIndices);
-      if (indicesArray.length > 0) {
-        regionMin = Math.min(...indicesArray);
-        regionMax = Math.max(...indicesArray);
-      } else {
-        regionMin = -Infinity;
-        regionMax = Infinity;
-      }
+    } else {
+      signRange = [-1, 1];
     }
 
     return [
       [effectivePopMin, popMax],
-      [dynMin, dynMax],
-      [regionMin, regionMax]
+      [settings.dynamicsMin, settings.dynamicsMax],
+      signRange
     ];
   }, [
-    settings.populationMin, settings.populationMax, settings.showZeroPopulation,
+    settings.populationMin, settings.populationMax,
     settings.dynamicsMin, settings.dynamicsMax,
-    settings.mode, settings.absoluteFilter,
-    settings.selectedRegionIndices
+    settings.showZeroPopulation,
+    settings.mode, settings.absoluteFilter
   ]);
 
   const filterExtension = useMemo(() => new DataFilterExtension({ filterSize: 3 }), []);
@@ -220,44 +198,31 @@ export const useMapLayers = (
       extensions: [filterExtension],
       getFilterValue,
       filterRange,
+      
       pickable: true,
       autoHighlight: false,
       highlightColor: [0, 0, 0, 0],
-      onClick: settings.onClick,
+      
       updateTriggers: {
         getFillColor: [settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod, palette, settings.fillOpacity],
         getRadius: [settings.selectedYear, settings.powerCoefficient, settings.mode, settings.absolutePeriod, settings.minRadius],
         stroked: [settings.strokeWidth],
         getLineColor: [settings.strokeColor],
         getLineWidth: [settings.strokeWidth],
-        getFilterValue: [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod, regionToIndexMap],
+        getFilterValue: [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod],
         filterRange: [
-          settings.populationMin, settings.populationMax, settings.showZeroPopulation,
+          settings.populationMin, settings.populationMax,
           settings.dynamicsMin, settings.dynamicsMax,
-          settings.mode, settings.absoluteFilter,
-          settings.selectedRegionIndices
+          settings.showZeroPopulation,
+          settings.mode, settings.absoluteFilter
         ],
-        onClick: [settings.onClick],
       },
       parameters: {
         depthWriteEnabled: false,
         depthCompare: 'always'
       } as const,
     });
-  }, [
-    data, getFillColor, getRadius, getLineWidth,
-    settings.radiusScale, settings.minRadius,
-    settings.strokeWidth, settings.strokeColor, strokeRgb,
-    filterExtension, getFilterValue, filterRange,
-    settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod,
-    settings.powerCoefficient, palette, settings.fillOpacity,
-    settings.populationMin, settings.populationMax, settings.showZeroPopulation,
-    settings.dynamicsMin, settings.dynamicsMax,
-    settings.absoluteFilter,
-    settings.selectedRegionIndices,
-    regionToIndexMap,
-    settings.onClick,
-  ]);
+  }, [data, getFillColor, getRadius, getLineWidth, settings.radiusScale, settings.minRadius, settings.strokeWidth, settings.strokeColor, strokeRgb, filterExtension, getFilterValue, filterRange]);
 
   return useMemo(() => (layer ? [layer] : []), [layer]);
 };

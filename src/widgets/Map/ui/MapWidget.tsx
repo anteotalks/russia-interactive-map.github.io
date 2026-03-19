@@ -1,11 +1,5 @@
 /**
- * MapWidget - компонент карты с полной адаптивностью и правильной интеграцией DeckGL
- * 
- * ОСОБЕННОСТИ:
- * - Автоматически подстраивается под размер контейнера (ResizeObserver)
- * - Корректно работает при изменении размеров окна и повороте устройства
- * - Гарантирует, что все слои deck.gl рендерятся в одном контексте
- * - Поддерживает children для дополнительных контролов (например, SelectionTool)
+ * MapWidget - компонент карты с поддержкой onClick
  */
 
 import React, { forwardRef, useEffect, useRef, useCallback } from 'react';
@@ -13,7 +7,7 @@ import Map, { MapRef, useControl } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import type { MapboxOverlayProps } from '@deck.gl/mapbox';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Layer } from '@deck.gl/core';
+import type { Layer, PickingInfo } from '@deck.gl/core';
 import type { LayerConfig } from '../../../shared/types/map';
 import { NavigationControl } from 'react-map-gl/maplibre';
 import { buildMapStyle } from '../../../shared/lib/map/buildMapStyle';
@@ -24,7 +18,8 @@ export type TerrainMode = 'none' | 'hillshade' | '3d';
 
 interface MapWidgetProps {
   layers: Layer[];
-  getTooltip?: (info: any) => any;
+  getTooltip?: (info: PickingInfo) => any;
+  onClick?: (info: PickingInfo) => void;
   viewState?: {
     longitude: number;
     latitude: number;
@@ -42,15 +37,11 @@ interface MapWidgetProps {
   baseLayer: LayerConfig;
   terrainMode: TerrainMode;
   onViewStateChange?: (viewState: any) => void;
-  children?: React.ReactNode; // Добавляем поддержку дочерних компонентов
 }
 
 function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
   const overlay = useControl<MapboxOverlay>(
-    () => new MapboxOverlay({ 
-      ...props, 
-      interleaved: true
-    }),
+    () => new MapboxOverlay({ ...props, interleaved: true }),
   );
   overlay.setProps(props);
   return null;
@@ -70,12 +61,12 @@ function throttle<T extends (...args: any[]) => any>(func: T, limit: number): T 
 export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
   layers,
   getTooltip,
+  onClick,
   viewState,
   initialViewState,
   baseLayer,
   terrainMode,
   onViewStateChange,
-  children,
 }, ref) => {
   const mapStyle = React.useMemo(() => buildMapStyle(baseLayer), [baseLayer]);
   const terrainProps = terrainMode === '3d' ? { source: 'terrain-dem', exaggeration: 1.5 } : undefined;
@@ -98,23 +89,13 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
 
   useEffect(() => {
     if (!containerRef.current) return;
-
-    const observer = new ResizeObserver((entries) => {
-      throttledResize();
-    });
-
+    const observer = new ResizeObserver(() => throttledResize());
     observer.observe(containerRef.current);
-
-    return () => {
-      observer.disconnect();
-    };
+    return () => observer.disconnect();
   }, [throttledResize]);
 
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      handleResize();
-    }, 100);
-    
+    const timeoutId = setTimeout(handleResize, 100);
     return () => clearTimeout(timeoutId);
   }, [handleResize]);
 
@@ -123,13 +104,13 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
   }, [terrainMode]);
 
   return (
-    <div 
+    <div
       ref={containerRef}
-      style={{ 
-        position: 'absolute', 
-        top: 0, 
-        left: 0, 
-        right: 0, 
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
         bottom: 0,
         width: '100%',
         height: '100%',
@@ -165,9 +146,9 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
         <DeckGLOverlay
           layers={layers}
           getTooltip={getTooltip}
-          interleaved={true}
+          onClick={onClick}
+          interleaved
         />
-        {children} {/* Рендерим дочерние компоненты внутри Map */}
       </Map>
     </div>
   );
