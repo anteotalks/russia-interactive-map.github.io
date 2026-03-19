@@ -36,3 +36,5 @@ html, body {
   box-shadow: 0 4px 15px rgba(0,0,0,0.3);
   transform: scale(1.05);
 }
+@import "@fontsource/jost/400.css";
+@import "@fontsource/jost/700.css";

@@ -35,8 +35,8 @@ interface LayerSettings {
   dynamicsMax: number;
   showZeroPopulation: boolean;
   absoluteFilter: FilterDirection;
-  selectedRegionIndices: Set<number> | null; // Индексы выбранных регионов (Set для быстрой проверки)
-  allRegionIndices?: number[]; // Общий массив всех возможных индексов (опционально)
+  selectedRegionIndices: Set<number> | null;
+  onClick?: (info: any) => void;
 }
 
 export const useMapLayers = (
@@ -52,7 +52,6 @@ export const useMapLayers = (
     }
   }, [settings.strokeColor]);
 
-  // Создаём маппинг регион -> индекс для быстрого доступа
   const regionToIndexMap = useMemo(() => {
     if (!data) return new Map<string, number>();
     const uniqueRegions = Array.from(new Set(data.map(loc => loc.region))).sort();
@@ -120,11 +119,8 @@ export const useMapLayers = (
     return settings.strokeWidth;
   }, [settings.strokeWidth]);
 
-  // Возвращаем три значения: население, динамика (%), индекс региона
   const getFilterValue = useCallback((d: Location): [number, number, number] => {
     const pop = d[`population_${settings.selectedYear}`] || 0;
-
-    // Получаем индекс региона (по умолчанию -1, если регион не найден)
     const regionIndex = regionToIndexMap.get(d.region) ?? -1;
 
     let dynamicsPercent = 0;
@@ -157,17 +153,14 @@ export const useMapLayers = (
     return [pop, dynamicsPercent, regionIndex];
   }, [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod, regionToIndexMap]);
 
-  // Три размерности фильтра: население, динамика (%), индекс региона
   const filterRange = useMemo((): [number, number][] => {
     const popMin = settings.populationMin > 0 ? settings.populationMin : -Infinity;
     const popMax = settings.populationMax > 0 ? settings.populationMax : Infinity;
     const effectivePopMin = settings.showZeroPopulation ? popMin : Math.max(popMin, 0.1);
 
-    // Динамика/изменение
     let dynMin = settings.dynamicsMin;
     let dynMax = settings.dynamicsMax;
 
-    // Применяем фильтр "только прирост/убыль" для абсолютного режима
     if (settings.mode === 'absolute') {
       if (settings.absoluteFilter === 'growth') {
         dynMin = 0.001;
@@ -178,19 +171,10 @@ export const useMapLayers = (
       }
     }
 
-    // Диапазон для индексов регионов
     let regionMin = -Infinity;
     let regionMax = Infinity;
 
     if (settings.selectedRegionIndices && settings.selectedRegionIndices.size > 0) {
-      // Если есть выбранные регионы, показываем только их
-      // Преобразуем Set в массив допустимых значений – для DataFilterExtension нужно задать точные значения,
-      // но он работает с диапазонами, поэтому используем трюк: создаём массив [min, max] для каждого индекса?
-      // DataFilterExtension не поддерживает дискретные значения напрямую [citation:3],
-      // но можно задать диапазон, который включает только нужные индексы, если они последовательны.
-      // Проще всего: если индексы не последовательны, фильтрация не будет точной.
-      // Используем минимальное и максимальное значение из выбранных индексов – это приближение.
-      // Для точной фильтрации по категориям нужен categorySize [citation:3], но мы пока оставим так.
       const indicesArray = Array.from(settings.selectedRegionIndices);
       if (indicesArray.length > 0) {
         regionMin = Math.min(...indicesArray);
@@ -202,9 +186,9 @@ export const useMapLayers = (
     }
 
     return [
-      [effectivePopMin, popMax], // население
-      [dynMin, dynMax],           // динамика
-      [regionMin, regionMax]      // регионы (приближение)
+      [effectivePopMin, popMax],
+      [dynMin, dynMax],
+      [regionMin, regionMax]
     ];
   }, [
     settings.populationMin, settings.populationMax, settings.showZeroPopulation,
@@ -239,6 +223,7 @@ export const useMapLayers = (
       pickable: true,
       autoHighlight: false,
       highlightColor: [0, 0, 0, 0],
+      onClick: settings.onClick,
       updateTriggers: {
         getFillColor: [settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod, palette, settings.fillOpacity],
         getRadius: [settings.selectedYear, settings.powerCoefficient, settings.mode, settings.absolutePeriod, settings.minRadius],
@@ -252,6 +237,7 @@ export const useMapLayers = (
           settings.mode, settings.absoluteFilter,
           settings.selectedRegionIndices
         ],
+        onClick: [settings.onClick],
       },
       parameters: {
         depthWriteEnabled: false,
@@ -269,7 +255,8 @@ export const useMapLayers = (
     settings.dynamicsMin, settings.dynamicsMax,
     settings.absoluteFilter,
     settings.selectedRegionIndices,
-    regionToIndexMap
+    regionToIndexMap,
+    settings.onClick,
   ]);
 
   return useMemo(() => (layer ? [layer] : []), [layer]);

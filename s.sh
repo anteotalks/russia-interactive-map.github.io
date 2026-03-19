@@ -1,546 +1,336 @@
 #!/bin/bash
+
+# ПОЛНОЕ ВОССТАНОВЛЕНИЕ ВСЕХ ФАЙЛОВ ДЛЯ ГРАНИЦ ИЗ ТВОЕГО ПРИМЕРА
+
 set -e
 
-echo "💾 Добавляем сохранение всех настроек в localStorage..."
+echo "🔧 ВОССТАНАВЛИВАЕМ ВСЕ ФАЙЛЫ ДЛЯ ГРАНИЦ..."
 
-# 1. Создаём новый тип в shared/types
-mkdir -p src/shared/types
-cat > src/shared/types/settings.ts << 'EOF'
+# 1. useRegionLayer (уже есть, но перезапишем для гарантии)
+cat > src/shared/lib/hooks/useRegionLayer.ts << 'EOF'
 /**
- * Глобальный тип для всех сохраняемых настроек приложения
+ * Хук для слоя границ регионов с корректной обработкой глубины
+ * для правильного наложения на точки.
  */
-import { CameraSettings } from './camera';
-import { FilterSettings, SelectedRegions } from './visualization';
-import { RegionLayerConfig } from '../../entities/region/lib/types';
-import { GradientConfig, PaletteName } from '../../entities/palette/lib/types';
-import { VisualizationSettings, DynamicsPeriod, YearType, VisualizationMode, FilterDirection } from '../../widgets/ControlPanel/ui/ControlPanel';
 
-export interface AppSettings {
-  // Версия схемы для будущих миграций
-  version: number;
+import { useMemo } from 'react';
+import { GeoJsonLayer } from '@deck.gl/layers';
+import type { FeatureCollection } from 'geojson';
+import { hexToRgb } from '../color/utils';
+import type { RegionLayerConfig } from '../../../entities/region/lib/types';
 
-  // Настройки визуализации
-  selectedYear: YearType;
-  mode: VisualizationMode;
-  dynamicsMode: DynamicsPeriod;
-  absolutePeriod: DynamicsPeriod;
-  absoluteFilter: FilterDirection;
-  visualization: VisualizationSettings;
+export const useRegionLayer = (
+  regionsData: FeatureCollection | null,
+  config: RegionLayerConfig
+): GeoJsonLayer | null => {
+  return useMemo(() => {
+    if (!regionsData || !regionsData.features || regionsData.features.length === 0) {
+      return null;
+    }
 
-  // Палитра
-  paletteName: PaletteName | 'custom';
-  customGradient: GradientConfig;
-  paletteInverted: boolean;
+    if (!config) return null;
 
-  // Фильтры
-  filterSettings: FilterSettings;
+    const lineColorRgb = hexToRgb(config.color);
 
-  // Регионы
-  regionConfig: RegionLayerConfig;
-  selectedRegions: string[]; // массив для сериализации Set
-
-  // Слои карты
-  visibleBaseLayer: string; // id видимого базового слоя
-  terrainMode: 'none' | 'hillshade' | '3d';
-
-  // Камера
-  camera: CameraSettings;
-
-  // Состояние панели
-  panelVisible: boolean;
-}
-
-export const DEFAULT_SETTINGS: AppSettings = {
-  version: 1,
-  selectedYear: '2021',
-  mode: 'dynamics',
-  dynamicsMode: '2010-2021',
-  absolutePeriod: '2002-2021',
-  absoluteFilter: 'all',
-  visualization: {
-    selectedYear: '2021',
-    minRadius: 2,
-    powerCoefficient: 0.5,
-    radiusScale: 3,
-    strokeWidth: 1,
-    strokeColor: '#000000',
-    fillOpacity: 0.78,
-  },
-  paletteName: 'Красный-Жёлтый-Зелёный (RdYlGn)',
-  customGradient: {
-    startColor: '#d7191c',
-    midColor: '#ffffbf',
-    endColor: '#1a9641'
-  },
-  paletteInverted: false,
-  filterSettings: {
-    populationMin: 0,
-    populationMax: 0,
-    dynamicsMin: -100,
-    dynamicsMax: 100,
-    showZeroPopulation: true,
-  },
-  regionConfig: {
-    visible: true,
-    color: '#000000',
-    width: 1.0,
-    opacity: 0.5,
-  },
-  selectedRegions: [],
-  visibleBaseLayer: 'osm',
-  terrainMode: 'hillshade',
-  camera: {
-    longitude: 95,
-    latitude: 62,
-    zoom: 3,
-    pitch: 0,
-    bearing: 0
-  },
-  panelVisible: true,
+    return new GeoJsonLayer({
+      id: 'regions-layer',
+      data: regionsData,
+      stroked: true,
+      filled: false,
+      getLineColor: lineColorRgb,
+      getLineWidth: config.width,
+      lineWidthUnits: 'pixels',
+      opacity: config.opacity,
+      visible: config.visible,
+      pickable: false,
+      autoHighlight: false,
+      highlightColor: [0, 0, 0, 0],
+      
+      parameters: {
+        depthMask: false,
+        depthTest: true
+      },
+      
+      updateTriggers: {
+        getLineColor: [config.color],
+        getLineWidth: [config.width],
+        opacity: [config.opacity],
+      },
+      lineWidthMinPixels: 0.5,
+      lineWidthMaxPixels: 10,
+    });
+  }, [regionsData, config.visible, config.color, config.width, config.opacity]);
 };
 EOF
-echo "   ✅ src/shared/types/settings.ts"
 
-# 2. Обновляем ControlPanel.tsx – добавляем кнопки сохранения/сброса
-#    Используем патч вместо полной замены, чтобы не сломать интерфейс
-cat > src/widgets/ControlPanel/ui/ControlPanel.tsx << 'EOF'
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import Draggable, { DraggableData, DraggableEvent } from 'react-draggable';
+# 2. useMapLayers (основной слой точек)
+cat > src/shared/lib/hooks/useMapLayers.ts << 'EOF'
+/**
+ * Хук для слоя точек с фильтрацией по населению, динамике и регионам
+ * Использует DataFilterExtension с filterSize: 3
+ * Третье измерение – индекс региона для фильтрации по выбранным регионам
+ */
+
+import { useMemo, useCallback } from 'react';
+import { ScatterplotLayer } from '@deck.gl/layers';
+import { DataFilterExtension } from '@deck.gl/extensions';
+import type { Color } from '@deck.gl/core';
+import { Location } from '../../../entities/location/lib/types';
 import {
-  Paper, FormControl, InputLabel, Select, MenuItem, Typography, Box,
-  SelectChangeEvent, RadioGroup, FormControlLabel, Radio, IconButton,
-  Stack, Button, Popover, Divider, FormGroup, Switch, Tooltip, Tabs, Tab,
-  ToggleButton, ToggleButtonGroup
-} from '@mui/material';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import CloseIcon from '@mui/icons-material/Close';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import ColorizeIcon from '@mui/icons-material/Colorize';
-import TerrainIcon from '@mui/icons-material/Terrain';
-import MapIcon from '@mui/icons-material/Map';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import PaletteIcon from '@mui/icons-material/Palette';
-import CenterFocusWeakIcon from '@mui/icons-material/CenterFocusWeak';
-import FilterListIcon from '@mui/icons-material/FilterList';
-import LandscapeIcon from '@mui/icons-material/Landscape';
-import LayersClearIcon from '@mui/icons-material/LayersClear';
-import SaveIcon from '@mui/icons-material/Save';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import { HexColorPicker } from 'react-colorful';
+  getColorByDynamics,
+  getColorByAbsoluteChange,
+  getAbsoluteChange,
+  getNeutralColor,
+  hexToRgb
+} from '../color/utils';
+import { FilterDirection } from '../../../shared/types/visualization';
 
-import { PaletteLibrary } from '../../../shared/ui/PaletteLibrary';
-import { GradientPicker } from '../../../shared/ui/GradientPicker';
-import { CameraControls } from '../../../shared/ui/CameraControls';
-import { SliderWithInput } from '../../../shared/ui/SliderWithInput';
-import { RegionList } from '../../../shared/ui/RegionList';
-import { PaletteName } from '../../../entities/palette/lib/constants';
-import { invertPalette } from '../../../shared/lib/color/utils';
-import { GradientConfig } from '../../../entities/palette/lib/types';
-import { CameraSettings } from '../../../shared/types/camera';
-import { LayerConfig } from '../../../shared/lib/hooks/useMapLayersControl';
-import { FilterSettings } from '../../../shared/types/visualization';
-import { RegionLayerConfig } from '../../../entities/region/lib/types';
-import { AppSettings } from '../../../shared/types/settings';
-
-export type YearType = '2002' | '2010' | '2021';
-export type VisualizationMode = 'dynamics' | 'absolute';
-export type DynamicsPeriod = '2002-2010' | '2010-2021' | '2002-2021';
-export type FilterDirection = 'all' | 'growth' | 'decline';
-export type TerrainMode = 'none' | 'hillshade' | '3d';
-
-export interface VisualizationSettings {
-  selectedYear: YearType;
-  minRadius: number;
+interface LayerSettings {
+  selectedYear: '2002' | '2010' | '2021';
   powerCoefficient: number;
   radiusScale: number;
+  minRadius: number;
+  mode: 'dynamics' | 'absolute';
+  dynamicsPeriod: '2002-2010' | '2010-2021' | '2002-2021';
+  absolutePeriod: '2002-2010' | '2010-2021' | '2002-2021';
   strokeWidth: number;
   strokeColor: string;
   fillOpacity: number;
-}
-
-interface ControlPanelProps {
-  settings: VisualizationSettings;
-  onSettingsChange: (newSettings: Partial<VisualizationSettings>) => void;
-  selectedYear: YearType;
-  dynamicsMode: DynamicsPeriod;
-  onDynamicsModeChange: (mode: DynamicsPeriod) => void;
-  mode: VisualizationMode;
-  onModeChange: (mode: VisualizationMode) => void;
-  absolutePeriod: DynamicsPeriod;
-  onAbsolutePeriodChange: (period: DynamicsPeriod) => void;
-  absoluteFilter: FilterDirection;
-  onAbsoluteFilterChange: (filter: FilterDirection) => void;
-  currentPalette: string[];
-  selectedPaletteName: PaletteName | 'custom';
-  customGradient: GradientConfig;
-  onPaletteChange: (palette: string[]) => void;
-  onPaletteNameChange: (name: PaletteName | 'custom') => void;
-  onCustomGradientChange: (gradient: GradientConfig) => void;
-  onInvert?: () => void;
-  layers: LayerConfig[];
-  terrainEnabled: boolean;
-  onToggleLayer: (layerId: string) => void;
-  onToggleTerrain: () => void;
-  cameraSettings: CameraSettings;
-  onCameraChange: (key: keyof CameraSettings, value: number) => void;
-  onCameraReset: () => void;
-  onCameraSync: () => void;
-  isCameraSynced: boolean;
-  isVisible: boolean;
-  onVisibilityChange: (visible: boolean) => void;
-  filterSettings: FilterSettings;
-  onFilterChange: (newFilter: Partial<FilterSettings>) => void;
   populationMin: number;
   populationMax: number;
   dynamicsMin: number;
   dynamicsMax: number;
-  regionConfig: RegionLayerConfig;
-  onRegionConfigChange: (newConfig: Partial<RegionLayerConfig>) => void;
-  terrainMode: TerrainMode;
-  onTerrainModeChange: (mode: TerrainMode) => void;
-  regions: string[];
-  selectedRegions: Set<string>;
-  onRegionsSelectionChange: (regions: Set<string>) => void;
-  onCenterRegion: (region: string) => void;
-  onCenterSelectedRegions: () => void;
-  
-  // Новые пропсы для управления сохранением
-  onSaveSettings: () => void;
-  onResetToDefault: () => void;
+  showZeroPopulation: boolean;
+  absoluteFilter: FilterDirection;
+  selectedRegionIndices: Set<number> | null;
+  onClick?: (info: any) => void;
 }
 
-const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
-  const {
-    settings, onSettingsChange, selectedYear, dynamicsMode, onDynamicsModeChange,
-    mode, onModeChange, absolutePeriod, onAbsolutePeriodChange, absoluteFilter, onAbsoluteFilterChange,
-    currentPalette, selectedPaletteName, customGradient, onPaletteChange, onPaletteNameChange, onCustomGradientChange,
-    onInvert,
-    layers, terrainEnabled, onToggleLayer, onToggleTerrain,
-    cameraSettings, onCameraChange, onCameraReset, onCameraSync, isCameraSynced,
-    isVisible, onVisibilityChange, filterSettings, onFilterChange,
-    populationMin, populationMax, dynamicsMin, dynamicsMax,
-    regionConfig, onRegionConfigChange,
-    terrainMode, onTerrainModeChange,
-    regions, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions,
-    onSaveSettings, onResetToDefault
-  } = props;
-
-  const nodeRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x: 20, y: 20 });
-  const [bounds, setBounds] = useState({ left: 0, top: 0, right: 0, bottom: 0 });
-  const [colorPickerAnchor, setColorPickerAnchor] = useState<null | HTMLElement>(null);
-  const [activeTab, setActiveTab] = useState(0);
-
-  useEffect(() => {
-    if (nodeRef.current) {
-      const updateBounds = () => {
-        const node = nodeRef.current;
-        if (node) {
-          const { clientWidth, clientHeight } = document.documentElement;
-          const nodeWidth = node.offsetWidth;
-          const nodeHeight = node.offsetHeight;
-          setBounds({ left: 0, top: 0, right: clientWidth - nodeWidth, bottom: clientHeight - nodeHeight });
-        }
-      };
-      updateBounds();
-      window.addEventListener('resize', updateBounds);
-      return () => window.removeEventListener('resize', updateBounds);
+export const useMapLayers = (
+  data: Location[] | null,
+  settings: LayerSettings,
+  palette: string[]
+) => {
+  const strokeRgb = useMemo(() => {
+    try {
+      return hexToRgb(settings.strokeColor);
+    } catch {
+      return [0, 0, 0] as [number, number, number];
     }
-  }, [isVisible]);
+  }, [settings.strokeColor]);
 
-  const handleDrag = useCallback((_e: DraggableEvent, data: DraggableData) => setPosition({ x: data.x, y: data.y }), []);
-  const handleStop = useCallback((_e: DraggableEvent, data: DraggableData) => setPosition({ x: data.x, y: data.y }), []);
+  const regionToIndexMap = useMemo(() => {
+    if (!data) return new Map<string, number>();
+    const uniqueRegions = Array.from(new Set(data.map(loc => loc.region))).sort();
+    return new Map(uniqueRegions.map((region, index) => [region, index]));
+  }, [data]);
 
-  const handleRegionVisibleChange = (e: React.ChangeEvent<HTMLInputElement>) => 
-    onRegionConfigChange({ visible: e.target.checked });
-  const handleYearChange = (event: SelectChangeEvent) => onSettingsChange({ selectedYear: event.target.value as YearType });
-  const handleDynamicsModeChange = (event: React.ChangeEvent<HTMLInputElement>) => onDynamicsModeChange(event.target.value as DynamicsPeriod);
-  const handleModeChange = (event: React.ChangeEvent<HTMLInputElement>) => onModeChange(event.target.value as VisualizationMode);
-  const handleAbsolutePeriodChange = (event: React.ChangeEvent<HTMLInputElement>) => onAbsolutePeriodChange(event.target.value as DynamicsPeriod);
-  const handleAbsoluteFilterChange = (event: React.ChangeEvent<HTMLInputElement>) => onAbsoluteFilterChange(event.target.value as FilterDirection);
-  const toggleVisibility = () => onVisibilityChange(!isVisible);
-  const openColorPicker = (event: React.MouseEvent<HTMLElement>) => setColorPickerAnchor(event.currentTarget);
-  const closeColorPicker = () => setColorPickerAnchor(null);
-  const handleColorChange = (color: string) => onSettingsChange({ strokeColor: color });
-  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => setActiveTab(newValue);
-  const handleTerrainModeChange = (_event: React.MouseEvent<HTMLElement>, newMode: TerrainMode | null) => { if (newMode) onTerrainModeChange(newMode); };
+  const getFillColor = useCallback((d: Location): Color => {
+    const pop2002 = d.population_2002;
+    const pop2010 = d.population_2010;
+    const pop2021 = d.population_2021;
 
-  const baseLayers = layers.filter(l => l.type === 'base');
+    if (settings.mode === 'absolute') {
+      const change = getAbsoluteChange(d, settings.absolutePeriod);
+      return getColorByAbsoluteChange(change, palette, settings.fillOpacity) as Color;
+    }
 
-  if (!isVisible) {
-    return (
-      <Draggable nodeRef={nodeRef} handle=".drag-handle" bounds={bounds} position={position} onDrag={handleDrag} onStop={handleStop}>
-        <div ref={nodeRef} style={{ position: 'absolute', zIndex: 1300 }}>
-          <Paper className="control-panel-mini drag-handle" sx={{ p: 1, borderRadius: 2, boxShadow: 3, cursor: 'move', backgroundColor: 'rgba(255,255,255,0.9)' }}>
-            <IconButton size="small" onClick={toggleVisibility} title="Показать панель (Alt)"><OpenInNewIcon fontSize="small" /></IconButton>
-          </Paper>
-        </div>
-      </Draggable>
-    );
-  }
+    if (settings.selectedYear === '2002') {
+      return getNeutralColor(palette, settings.fillOpacity) as Color;
+    }
 
-  return (
-    <Draggable nodeRef={nodeRef} handle=".drag-handle" bounds={bounds} position={position} onDrag={handleDrag} onStop={handleStop}>
-      <div ref={nodeRef} style={{ position: 'absolute', zIndex: 1300 }}>
-        <Paper sx={{ p: 3, width: 600, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', backgroundColor: 'rgba(255,255,255,0.98)', borderRadius: 2, boxShadow: 3 }}>
-          <Box className="drag-handle" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, cursor: 'move', borderBottom: '1px solid #e0e0e0', pb: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <DragIndicatorIcon fontSize="small" color="action" />
-              <Typography variant="h6">Настройки карты</Typography>
-            </Box>
-            <Box>
-              <Tooltip title="Сохранить настройки">
-                <IconButton size="small" onClick={onSaveSettings} sx={{ mr: 0.5 }}>
-                  <SaveIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Сбросить к заводским">
-                <IconButton size="small" onClick={onResetToDefault} sx={{ mr: 0.5 }}>
-                  <RestartAltIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <IconButton size="small" onClick={toggleVisibility} title="Скрыть панель (Alt)">
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          </Box>
+    if (settings.selectedYear === '2010') {
+      if (pop2002 === 0 || isNaN(pop2002) || !isFinite(pop2002)) {
+        return getNeutralColor(palette, settings.fillOpacity) as Color;
+      }
+      const changePercent = ((pop2010 - pop2002) / pop2002) * 100;
+      return getColorByDynamics(changePercent, palette, settings.fillOpacity) as Color;
+    }
 
-          <Tabs value={activeTab} onChange={handleTabChange} sx={{ mb: 2 }} variant="fullWidth">
-            <Tab icon={<ColorizeIcon fontSize="small" />} label="Визуализация" />
-            <Tab icon={<MapIcon fontSize="small" />} label="Слои" />
-            <Tab icon={<PaletteIcon fontSize="small" />} label="Палитры" />
-            <Tab icon={<CenterFocusWeakIcon fontSize="small" />} label="Вид" />
-            <Tab icon={<FilterListIcon fontSize="small" />} label="Фильтры" />
-            <Tab icon={<MapIcon fontSize="small" />} label="Регионы" />
-          </Tabs>
+    if (settings.selectedYear === '2021') {
+      if (settings.dynamicsPeriod === '2010-2021') {
+        if (pop2010 === 0 || isNaN(pop2010) || !isFinite(pop2010)) {
+          return getNeutralColor(palette, settings.fillOpacity) as Color;
+        }
+        const changePercent = ((pop2021 - pop2010) / pop2010) * 100;
+        return getColorByDynamics(changePercent, palette, settings.fillOpacity) as Color;
+      } else {
+        if (pop2002 === 0 || isNaN(pop2002) || !isFinite(pop2002)) {
+          return getNeutralColor(palette, settings.fillOpacity) as Color;
+        }
+        const changePercent = ((pop2021 - pop2002) / pop2002) * 100;
+        return getColorByDynamics(changePercent, palette, settings.fillOpacity) as Color;
+      }
+    }
 
-          {activeTab === 0 && (
-            <Stack spacing={2}>
-              <Box><Typography variant="subtitle2" color="primary" gutterBottom>Режим отображения</Typography>
-                <RadioGroup value={mode} onChange={handleModeChange} row>
-                  <FormControlLabel value="dynamics" control={<Radio size="small" />} label="Динамика (%)" />
-                  <FormControlLabel value="absolute" control={<Radio size="small" />} label="Абсолютный прирост/убыль" />
-                </RadioGroup>
-              </Box>
+    return getNeutralColor(palette, settings.fillOpacity) as Color;
+  }, [settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod, palette, settings.fillOpacity]);
 
-              {mode === 'absolute' && (
-                <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-                  <Typography variant="subtitle2" gutterBottom>Период</Typography>
-                  <RadioGroup value={absolutePeriod} onChange={handleAbsolutePeriodChange}>
-                    <FormControlLabel value="2002-2010" control={<Radio size="small" />} label="2002 → 2010" />
-                    <FormControlLabel value="2010-2021" control={<Radio size="small" />} label="2010 → 2021" />
-                    <FormControlLabel value="2002-2021" control={<Radio size="small" />} label="2002 → 2021" />
-                  </RadioGroup>
-                  <Typography variant="subtitle2" gutterBottom sx={{ mt: 2 }}>Показывать</Typography>
-                  <RadioGroup value={absoluteFilter} onChange={handleAbsoluteFilterChange}>
-                    <FormControlLabel value="all" control={<Radio size="small" />} label="Все изменения" />
-                    <FormControlLabel value="growth" control={<Radio size="small" />} label="Только прирост" />
-                    <FormControlLabel value="decline" control={<Radio size="small" />} label="Только убыль" />
-                  </RadioGroup>
-                </Box>
-              )}
+  const getRadius = useCallback((d: Location): number => {
+    if (settings.mode === 'absolute') {
+      const change = Math.abs(getAbsoluteChange(d, settings.absolutePeriod));
+      if (change === 0 || isNaN(change) || !isFinite(change)) {
+        return settings.minRadius;
+      }
+      return Math.pow(change, settings.powerCoefficient);
+    }
 
-              {mode === 'dynamics' && (
-                <FormControl fullWidth size="small">
-                  <InputLabel>Год переписи</InputLabel>
-                  <Select value={selectedYear} label="Год переписи" onChange={handleYearChange}>
-                    <MenuItem value="2002">2002</MenuItem>
-                    <MenuItem value="2010">2010</MenuItem>
-                    <MenuItem value="2021">2021</MenuItem>
-                  </Select>
-                </FormControl>
-              )}
+    const pop = d[`population_${settings.selectedYear}`];
+    if (pop === 0 || isNaN(pop) || !isFinite(pop)) {
+      return settings.minRadius;
+    }
+    return Math.pow(pop, settings.powerCoefficient);
+  }, [settings.selectedYear, settings.powerCoefficient, settings.mode, settings.absolutePeriod, settings.minRadius]);
 
-              {mode === 'dynamics' && selectedYear === '2021' && (
-                <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-                  <Typography variant="subtitle2" gutterBottom>Режим динамики</Typography>
-                  <RadioGroup value={dynamicsMode} onChange={handleDynamicsModeChange}>
-                    <FormControlLabel value="2010-2021" control={<Radio size="small" />} label="Динамика 2010 → 2021" />
-                    <FormControlLabel value="2002-2021" control={<Radio size="small" />} label="Динамика 2002 → 2021" />
-                  </RadioGroup>
-                </Box>
-              )}
+  const getLineWidth = useCallback((_d: Location): number => {
+    return settings.strokeWidth;
+  }, [settings.strokeWidth]);
 
-              {mode === 'dynamics' && selectedYear === '2002' && (
-                <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-                  <Typography variant="body2" color="text.secondary">Для 2002 года используется нейтральный цвет</Typography>
-                </Box>
-              )}
-              
-              {mode === 'dynamics' && selectedYear === '2010' && (
-                <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-                  <Typography variant="body2" color="text.secondary">Цвет показывает динамику 2002 → 2010</Typography>
-                </Box>
-              )}
+  const getFilterValue = useCallback((d: Location): [number, number, number] => {
+    const pop = d[`population_${settings.selectedYear}`] || 0;
+    const regionIndex = regionToIndexMap.get(d.region) ?? -1;
 
-              <Divider sx={{ my: 1 }} />
-              <Typography variant="subtitle2" color="primary">Размер точек</Typography>
-              <SliderWithInput label="Минимальный размер (px)" value={settings.minRadius} onChange={(val) => onSettingsChange({ minRadius: val })} min={0} max={20} step={0.5} unit="px" />
-              <SliderWithInput label="Степенной коэффициент" value={settings.powerCoefficient} onChange={(val) => onSettingsChange({ powerCoefficient: val })} min={0} max={1} step={0.01} />
-              <SliderWithInput label="Масштаб" value={settings.radiusScale} onChange={(val) => onSettingsChange({ radiusScale: val })} min={0.5} max={500} step={0.5} />
+    let dynamicsPercent = 0;
+    const pop2002 = d.population_2002;
+    const pop2010 = d.population_2010;
+    const pop2021 = d.population_2021;
 
-              <Divider sx={{ my: 1 }} />
-              <Typography variant="subtitle2" color="primary">Обводка точек</Typography>
-              <SliderWithInput label="Толщина обводки (px)" value={settings.strokeWidth} onChange={(val) => onSettingsChange({ strokeWidth: val })} min={0} max={5} step={0.1} unit="px" />
+    if (settings.mode === 'absolute') {
+      let change = 0;
+      if (settings.absolutePeriod === '2002-2010') {
+        if (pop2002 > 0) change = pop2010 - pop2002;
+      } else if (settings.absolutePeriod === '2010-2021') {
+        if (pop2010 > 0) change = pop2021 - pop2010;
+      } else {
+        if (pop2002 > 0) change = pop2021 - pop2002;
+      }
+      dynamicsPercent = pop2002 > 0 ? (change / pop2002) * 100 : 0;
+    } else {
+      if (settings.selectedYear === '2010') {
+        if (pop2002 > 0) dynamicsPercent = ((pop2010 - pop2002) / pop2002) * 100;
+      } else if (settings.selectedYear === '2021') {
+        if (settings.dynamicsPeriod === '2010-2021') {
+          if (pop2010 > 0) dynamicsPercent = ((pop2021 - pop2010) / pop2010) * 100;
+        } else {
+          if (pop2002 > 0) dynamicsPercent = ((pop2021 - pop2002) / pop2002) * 100;
+        }
+      }
+    }
 
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>Цвет обводки</Typography>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Box sx={{ width: 36, height: 36, borderRadius: 1, bgcolor: settings.strokeColor, border: '2px solid', borderColor: 'grey.300', cursor: 'pointer' }} onClick={openColorPicker} />
-                  <Button size="small" startIcon={<ColorizeIcon />} onClick={openColorPicker}>Выбрать цвет</Button>
-                </Stack>
-                <Popover open={Boolean(colorPickerAnchor)} anchorEl={colorPickerAnchor} onClose={closeColorPicker} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
-                  <Box sx={{ p: 2 }}><HexColorPicker color={settings.strokeColor} onChange={handleColorChange} /></Box>
-                </Popover>
-              </Box>
+    return [pop, dynamicsPercent, regionIndex];
+  }, [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod, regionToIndexMap]);
 
-              <Divider sx={{ my: 1 }} />
-              <Typography variant="subtitle2" color="primary">Прозрачность точек</Typography>
-              <SliderWithInput
-                label="Прозрачность"
-                value={settings.fillOpacity ?? 0.78}
-                onChange={(val) => onSettingsChange({ fillOpacity: val })}
-                min={0}
-                max={1}
-                step={0.01}
-              />
-            </Stack>
-          )}
+  const filterRange = useMemo((): [number, number][] => {
+    const popMin = settings.populationMin > 0 ? settings.populationMin : -Infinity;
+    const popMax = settings.populationMax > 0 ? settings.populationMax : Infinity;
+    const effectivePopMin = settings.showZeroPopulation ? popMin : Math.max(popMin, 0.1);
 
-          {activeTab === 1 && (
-            <Stack spacing={2}>
-              <Typography variant="subtitle2" color="primary">Слои карты</Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -1 }}>Базовая карта</Typography>
-              <FormGroup>
-                {baseLayers.map(layer => (
-                  <FormControlLabel key={layer.id} control={<Switch size="small" checked={layer.visible} onChange={() => onToggleLayer(layer.id)} color="primary" />} label={<Box sx={{ display: 'flex', alignItems: 'center' }}>{layer.name}<Tooltip title={layer.visible ? "Видимый" : "Скрыт"}><IconButton size="small" sx={{ ml: 0.5 }}>{layer.visible ? <VisibilityIcon fontSize="small" color="action" /> : <VisibilityOffIcon fontSize="small" color="disabled" />}</IconButton></Tooltip></Box>} />
-                ))}
-              </FormGroup>
-              <Divider sx={{ my: 1 }} />
-              
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="subtitle2" color="primary" gutterBottom>Границы регионов</Typography>
-                <FormControlLabel
-                  control={<Switch size="small" checked={regionConfig.visible} onChange={handleRegionVisibleChange} />}
-                  label="Показать границы"
-                />
-                <Box sx={{ pl: 2, mt: 1 }}>
-                  <Typography variant="caption" display="block" gutterBottom>Цвет линий</Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                    <Box sx={{ width: 30, height: 30, borderRadius: 1, bgcolor: regionConfig.color, border: '1px solid #ccc' }} />
-                    <Button size="small" onClick={(e) => setColorPickerAnchor(e.currentTarget)}>Выбрать</Button>
-                  </Box>
-                  <SliderWithInput
-                    label="Толщина (px)"
-                    value={regionConfig.width}
-                    onChange={(val) => onRegionConfigChange({ width: val })}
-                    min={0.5} max={5} step={0.1} unit="px"
-                  />
-                  <SliderWithInput
-                    label="Прозрачность"
-                    value={regionConfig.opacity}
-                    onChange={(val) => onRegionConfigChange({ opacity: val })}
-                    min={0} max={1} step={0.01}
-                  />
-                </Box>
-                <Popover open={Boolean(colorPickerAnchor)} anchorEl={colorPickerAnchor} onClose={() => setColorPickerAnchor(null)}>
-                  <HexColorPicker color={regionConfig.color} onChange={(c) => onRegionConfigChange({ color: c })} />
-                </Popover>
-              </Box>
+    let dynMin = settings.dynamicsMin;
+    let dynMax = settings.dynamicsMax;
 
-              <Divider sx={{ my: 1 }} />
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="subtitle2" color="primary" gutterBottom>Режим рельефа</Typography>
-                <ToggleButtonGroup value={terrainMode} exclusive onChange={handleTerrainModeChange} size="small" fullWidth sx={{ mt: 1 }}>
-                  <ToggleButton value="none"><Tooltip title="Без рельефа"><Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><LayersClearIcon fontSize="small" /><Typography variant="body2">Нет</Typography></Box></Tooltip></ToggleButton>
-                  <ToggleButton value="hillshade"><Tooltip title="Тени (2D)"><Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><LandscapeIcon fontSize="small" /><Typography variant="body2">Тени</Typography></Box></Tooltip></ToggleButton>
-                  <ToggleButton value="3d"><Tooltip title="3D рельеф"><Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><TerrainIcon fontSize="small" /><Typography variant="body2">3D</Typography></Box></Tooltip></ToggleButton>
-                </ToggleButtonGroup>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                  {terrainMode === 'none' && 'Плоская карта, без эффектов рельефа'}
-                  {terrainMode === 'hillshade' && '2D-тени на основе высот'}
-                  {terrainMode === '3d' && 'Настоящий 3D рельеф'}
-                </Typography>
-              </Box>
-            </Stack>
-          )}
+    if (settings.mode === 'absolute') {
+      if (settings.absoluteFilter === 'growth') {
+        dynMin = 0.001;
+        dynMax = Infinity;
+      } else if (settings.absoluteFilter === 'decline') {
+        dynMin = -Infinity;
+        dynMax = -0.001;
+      }
+    }
 
-          {activeTab === 2 && (
-            <Stack spacing={3}>
-              <Box><Typography variant="subtitle2" color="primary" gutterBottom>Библиотека палитр</Typography>
-                <PaletteLibrary 
-                  value={selectedPaletteName} 
-                  onChange={(name, colors) => { 
-                    onPaletteNameChange(name); 
-                    if (name !== 'custom' && colors.length > 0) onPaletteChange(colors); 
-                  }} 
-                  onInvert={() => {
-                    if (onInvert) {
-                      onInvert();
-                    }
-                  }} 
-                  showInvert={true} 
-                />
-              </Box>
-              {selectedPaletteName === 'custom' && (
-                <Box><Typography variant="subtitle2" color="primary" gutterBottom>Пользовательский градиент</Typography>
-                  <GradientPicker value={customGradient} onChange={(gradient) => { onCustomGradientChange(gradient); onPaletteChange([gradient.startColor, gradient.midColor, gradient.endColor]); }} />
-                </Box>
-              )}
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>Текущая палитра</Typography>
-                <Paper variant="outlined" sx={{ height: 40, width: '100%', background: `linear-gradient(90deg, ${currentPalette[0]} 0%, ${currentPalette[1]} 50%, ${currentPalette[2]} 100%)`, borderRadius: 1, border: '1px solid', borderColor: 'grey.300' }} />
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                  <Typography variant="caption" color="error.main">Убыль (-100%)</Typography>
-                  <Typography variant="caption" color="text.secondary">0%</Typography>
-                  <Typography variant="caption" color="success.main">Рост (+100%)</Typography>
-                </Box>
-              </Box>
-            </Stack>
-          )}
+    let regionMin = -Infinity;
+    let regionMax = Infinity;
 
-          {activeTab === 3 && (
-            <CameraControls settings={cameraSettings} onSettingChange={onCameraChange} onReset={onCameraReset} onSync={onCameraSync} isSynced={isCameraSynced} />
-          )}
+    if (settings.selectedRegionIndices && settings.selectedRegionIndices.size > 0) {
+      const indicesArray = Array.from(settings.selectedRegionIndices);
+      if (indicesArray.length > 0) {
+        regionMin = Math.min(...indicesArray);
+        regionMax = Math.max(...indicesArray);
+      } else {
+        regionMin = -Infinity;
+        regionMax = Infinity;
+      }
+    }
 
-          {activeTab === 4 && (
-            <Stack spacing={2}>
-              <Typography variant="subtitle2" color="primary">Фильтр по населению</Typography>
-              <SliderWithInput label="Минимум" value={filterSettings.populationMin} onChange={(val) => onFilterChange({ populationMin: val })} min={0} max={populationMax} step={Math.ceil(populationMax / 100)} unit="чел." />
-              <SliderWithInput label="Максимум" value={filterSettings.populationMax} onChange={(val) => onFilterChange({ populationMax: val })} min={0} max={populationMax} step={Math.ceil(populationMax / 100)} unit="чел." />
-              <FormControlLabel control={<Switch size="small" checked={filterSettings.showZeroPopulation} onChange={(e) => onFilterChange({ showZeroPopulation: e.target.checked })} />} label="Показывать н.п. с нулевым населением" />
-              <Divider sx={{ my: 1 }} />
-              <Typography variant="subtitle2" color="primary">Фильтр по динамике (%)</Typography>
-              <SliderWithInput label="Мин. динамика" value={filterSettings.dynamicsMin} onChange={(val) => onFilterChange({ dynamicsMin: val })} min={dynamicsMin} max={dynamicsMax} step={1} unit="%" />
-              <SliderWithInput label="Макс. динамика" value={filterSettings.dynamicsMax} onChange={(val) => onFilterChange({ dynamicsMax: val })} min={dynamicsMin} max={dynamicsMax} step={1} unit="%" />
-            </Stack>
-          )}
+    return [
+      [effectivePopMin, popMax],
+      [dynMin, dynMax],
+      [regionMin, regionMax]
+    ];
+  }, [
+    settings.populationMin, settings.populationMax, settings.showZeroPopulation,
+    settings.dynamicsMin, settings.dynamicsMax,
+    settings.mode, settings.absoluteFilter,
+    settings.selectedRegionIndices
+  ]);
 
-          {activeTab === 5 && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" color="primary" gutterBottom>Выбор регионов</Typography>
-              <RegionList
-                regions={regions}
-                selectedRegions={selectedRegions}
-                onSelectionChange={onRegionsSelectionChange}
-                onCenterRegion={onCenterRegion}
-                onCenterSelected={onCenterSelectedRegions}
-              />
-            </Box>
-          )}
-        </Paper>
-      </div>
-    </Draggable>
-  );
+  const filterExtension = useMemo(() => new DataFilterExtension({ filterSize: 3 }), []);
+
+  const layer = useMemo(() => {
+    if (!data || data.length === 0) return null;
+
+    return new ScatterplotLayer<Location>({
+      id: 'locations-layer',
+      data,
+      getPosition: (d: Location) => [d.longitude, d.latitude],
+      getFillColor,
+      getRadius,
+      stroked: settings.strokeWidth > 0,
+      getLineColor: [...strokeRgb, 255] as Color,
+      getLineWidth,
+      radiusScale: settings.radiusScale,
+      lineWidthUnits: 'pixels',
+      lineWidthScale: 1,
+      lineWidthMinPixels: settings.strokeWidth > 0 ? 0.5 : 0,
+      lineWidthMaxPixels: 10,
+      radiusMinPixels: settings.minRadius,
+      extensions: [filterExtension],
+      getFilterValue,
+      filterRange,
+      pickable: true,
+      autoHighlight: false,
+      highlightColor: [0, 0, 0, 0],
+      onClick: settings.onClick,
+      updateTriggers: {
+        getFillColor: [settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod, palette, settings.fillOpacity],
+        getRadius: [settings.selectedYear, settings.powerCoefficient, settings.mode, settings.absolutePeriod, settings.minRadius],
+        stroked: [settings.strokeWidth],
+        getLineColor: [settings.strokeColor],
+        getLineWidth: [settings.strokeWidth],
+        getFilterValue: [settings.selectedYear, settings.mode, settings.absolutePeriod, settings.dynamicsPeriod, regionToIndexMap],
+        filterRange: [
+          settings.populationMin, settings.populationMax, settings.showZeroPopulation,
+          settings.dynamicsMin, settings.dynamicsMax,
+          settings.mode, settings.absoluteFilter,
+          settings.selectedRegionIndices
+        ],
+        onClick: [settings.onClick],
+      },
+      parameters: {
+        depthWriteEnabled: false,
+        depthCompare: 'always'
+      } as const,
+    });
+  }, [
+    data, getFillColor, getRadius, getLineWidth,
+    settings.radiusScale, settings.minRadius,
+    settings.strokeWidth, settings.strokeColor, strokeRgb,
+    filterExtension, getFilterValue, filterRange,
+    settings.selectedYear, settings.dynamicsPeriod, settings.mode, settings.absolutePeriod,
+    settings.powerCoefficient, palette, settings.fillOpacity,
+    settings.populationMin, settings.populationMax, settings.showZeroPopulation,
+    settings.dynamicsMin, settings.dynamicsMax,
+    settings.absoluteFilter,
+    settings.selectedRegionIndices,
+    regionToIndexMap,
+    settings.onClick,
+  ]);
+
+  return useMemo(() => (layer ? [layer] : []), [layer]);
 };
-
-export const ControlPanel = React.memo(ControlPanelComponent);
-export default ControlPanel;
 EOF
-echo "   ✅ src/widgets/ControlPanel/ui/ControlPanel.tsx (добавлены кнопки сохранения/сброса)"
 
-# 3. Обновляем MapPage.tsx – добавляем логику загрузки/сохранения
+# 3. MapPage (самый важный - там правильное объединение слоёв)
 cat > src/pages/MapPage/ui/MapPage.tsx << 'EOF'
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { FeatureCollection } from 'geojson';
@@ -562,6 +352,8 @@ import { useCamera } from '../../../shared/lib/hooks/useCamera';
 import { DEFAULT_FILTER_SETTINGS, FilterSettings, SelectedRegions } from '../../../shared/types/visualization';
 import type { PaletteName } from '../../../entities/palette/lib/constants';
 import { AppSettings, DEFAULT_SETTINGS } from '../../../shared/types/settings';
+import Watermark from '../../../shared/ui/Watermark';
+import Dashboard, { DashboardData } from '../../../shared/ui/Dashboard';
 
 export interface VisualizationSettings {
   selectedYear: YearType;
@@ -631,13 +423,11 @@ export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Загрузка сохранённых настроек или использование дефолтных
   const loadSavedSettings = useCallback((): AppSettings => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as AppSettings;
-        // Проверка версии для будущих миграций
         if (parsed.version === DEFAULT_SETTINGS.version) {
           return parsed;
         }
@@ -648,7 +438,6 @@ export const MapPage: React.FC = () => {
     return DEFAULT_SETTINGS;
   }, []);
 
-  // Состояния с инициализацией из localStorage [citation:1]
   const [settings, setSettings] = useState<VisualizationSettings>(() => 
     loadSavedSettings().visualization
   );
@@ -680,18 +469,17 @@ export const MapPage: React.FC = () => {
     new Set(loadSavedSettings().selectedRegions)
   );
 
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
+
   const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
   
-  // Инициализация палитры из сохранённых настроек
   useEffect(() => {
     const saved = loadSavedSettings();
     if (saved.paletteName !== 'custom') {
       selectPalette(saved.paletteName);
     }
-    if (saved.paletteInverted) {
-      toggleInvert();
-    }
-  }, []); // только при монтировании
+  }, []);
 
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera(() => 
     loadSavedSettings().camera
@@ -700,7 +488,6 @@ export const MapPage: React.FC = () => {
   const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = 
     useMapLayersControl(ALL_BASE_LAYERS);
 
-  // Устанавливаем видимый базовый слой из сохранений
   useEffect(() => {
     const saved = loadSavedSettings();
     const savedLayer = ALL_BASE_LAYERS.find(l => l.id === saved.visibleBaseLayer);
@@ -714,8 +501,8 @@ export const MapPage: React.FC = () => {
   const [dynamicsMax, setDynamicsMax] = useState(100);
 
   const activeRequests = useRef(0);
+  const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
 
-  // Загрузка данных
   useEffect(() => {
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
@@ -780,8 +567,6 @@ export const MapPage: React.FC = () => {
       controller.abort();
     };
   }, []);
-
-  const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
 
   const handleMapViewStateChange = useCallback((newViewState: any) => handleViewStateChange(newViewState), [handleViewStateChange]);
   const handleCameraChange = useCallback((key: keyof typeof cameraSettings, value: number) => { 
@@ -871,9 +656,18 @@ export const MapPage: React.FC = () => {
 
   const filteredLocations = useMemo(() => {
     if (!stableLocations) return null;
-    if (selectedRegions.size === 0) return [];
+    if (selectedRegions.size === 0) return stableLocations;
     return stableLocations.filter(loc => selectedRegions.has(loc.region));
   }, [stableLocations, selectedRegions]);
+
+  const visibleLocations = filteredLocations;
+
+  const handleLayerClick = useCallback((info: any) => {
+    if (!info.object) return;
+    const location = info.object as Location;
+    setDashboardData({ type: 'point', location });
+    setDashboardOpen(true);
+  }, []);
 
   const layerSettings = useMemo(() => ({
     selectedYear: settings.selectedYear,
@@ -892,9 +686,11 @@ export const MapPage: React.FC = () => {
     dynamicsMin: filterSettings.dynamicsMin,
     dynamicsMax: filterSettings.dynamicsMax,
     showZeroPopulation: filterSettings.showZeroPopulation,
-  }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings]);
+    onClick: handleLayerClick,
+    selectedRegionIndices: null,
+  }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings, handleLayerClick]);
 
-  const deckLayers = useMapLayers(filteredLocations, layerSettings, palette);
+  const deckLayers = useMapLayers(visibleLocations, layerSettings, palette);
   const regionLayer = useRegionLayer(regionsData, regionConfig);
 
   const allLayers = useMemo(() => {
@@ -930,9 +726,8 @@ export const MapPage: React.FC = () => {
     return Array.from(uniqueRegions).sort();
   }, [locations]);
 
-  // Автосохранение настроек при любом изменении [citation:5]
   useEffect(() => {
-    if (isLoading) return; // Не сохраняем во время загрузки
+    if (isLoading) return;
 
     const settingsToSave: AppSettings = {
       version: DEFAULT_SETTINGS.version,
@@ -944,7 +739,7 @@ export const MapPage: React.FC = () => {
       visualization: settings,
       paletteName: selectedName,
       customGradient,
-      paletteInverted: selectedName === 'custom' ? false : false, // нужно получить из usePalette
+      paletteInverted: false,
       filterSettings,
       regionConfig,
       selectedRegions: Array.from(selectedRegions),
@@ -966,7 +761,6 @@ export const MapPage: React.FC = () => {
     isLoading
   ]);
 
-  // Сброс к заводским настройкам
   const handleResetToDefault = useCallback(() => {
     if (window.confirm('Сбросить все настройки к значениям по умолчанию?')) {
       localStorage.removeItem(STORAGE_KEY);
@@ -974,9 +768,7 @@ export const MapPage: React.FC = () => {
     }
   }, []);
 
-  // Сохранение настроек вручную (кнопка)
   const handleSaveSettings = useCallback(() => {
-    // Автосохранение уже работает, просто уведомляем
     alert('Настройки сохранены');
   }, []);
 
@@ -1006,6 +798,7 @@ export const MapPage: React.FC = () => {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <Watermark />
       <ControlPanel
         settings={settings}
         onSettingsChange={handleSettingsChange}
@@ -1053,6 +846,8 @@ export const MapPage: React.FC = () => {
         onCenterSelectedRegions={handleCenterSelectedRegions}
         onSaveSettings={handleSaveSettings}
         onResetToDefault={handleResetToDefault}
+        visiblePointsCount={visibleLocations?.length ?? 0}
+        totalPointsCount={locations?.length ?? 0}
       />
       <MapWidget
         ref={mapRef}
@@ -1063,22 +858,21 @@ export const MapPage: React.FC = () => {
         viewState={viewState}
         onViewStateChange={handleMapViewStateChange}
       />
+      <Dashboard
+        open={dashboardOpen}
+        data={dashboardData}
+        onClose={() => setDashboardOpen(false)}
+        selectedYear={settings.selectedYear}
+        dynamicsPeriod={dynamicsMode}
+        mode={mode}
+        absolutePeriod={absolutePeriod}
+      />
     </div>
   );
 };
 
 export default MapPage;
 EOF
-echo "   ✅ src/pages/MapPage/ui/MapPage.tsx (интегрировано сохранение)"
 
-echo ""
-echo "🎉 СОХРАНЕНИЕ НАСТРОЕК УСПЕШНО ДОБАВЛЕНО!"
-echo ""
-echo "📌 Что реализовано:"
-echo "   - Создан единый тип AppSettings, включающий все параметры"
-echo "   - Ленивая инициализация useState для загрузки из localStorage [citation:1]"
-echo "   - Автосохранение через useEffect при любых изменениях [citation:5]"
-echo "   - Кнопки сохранения и сброса в панели управления"
-echo "   - Обработка ошибок парсинга JSON [citation:1]"
-echo ""
-echo "🚀 Перезапустите проект: pnpm dev"
+echo "✅ ВСЁ ВОССТАНОВЛЕНО!"
+echo "🚀 Запусти: pnpm dev"

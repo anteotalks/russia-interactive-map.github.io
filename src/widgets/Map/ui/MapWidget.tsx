@@ -5,6 +5,7 @@
  * - Автоматически подстраивается под размер контейнера (ResizeObserver)
  * - Корректно работает при изменении размеров окна и повороте устройства
  * - Гарантирует, что все слои deck.gl рендерятся в одном контексте
+ * - Поддерживает children для дополнительных контролов (например, SelectionTool)
  */
 
 import React, { forwardRef, useEffect, useRef, useCallback } from 'react';
@@ -41,21 +42,20 @@ interface MapWidgetProps {
   baseLayer: LayerConfig;
   terrainMode: TerrainMode;
   onViewStateChange?: (viewState: any) => void;
+  children?: React.ReactNode; // Добавляем поддержку дочерних компонентов
 }
 
 function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
-  // Убеждаемся, что overlay всегда использует interleaved: true
   const overlay = useControl<MapboxOverlay>(
     () => new MapboxOverlay({ 
       ...props, 
-      interleaved: true  // Всегда interleaved для одного контекста
+      interleaved: true
     }),
   );
   overlay.setProps(props);
   return null;
 }
 
-// Простая функция throttle для оптимизации resize
 function throttle<T extends (...args: any[]) => any>(func: T, limit: number): T {
   let inThrottle: boolean;
   return ((...args: any[]) => {
@@ -75,36 +75,31 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
   baseLayer,
   terrainMode,
   onViewStateChange,
+  children,
 }, ref) => {
   const mapStyle = React.useMemo(() => buildMapStyle(baseLayer), [baseLayer]);
   const terrainProps = terrainMode === '3d' ? { source: 'terrain-dem', exaggeration: 1.5 } : undefined;
   
-  // Реф для контейнера карты (нужен для ResizeObserver)
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRefLocal = useRef<MapRef | null>(null);
 
-  // Функция для принудительного обновления размеров карты
   const handleResize = useCallback(() => {
     if (mapRefLocal.current) {
       mapRefLocal.current.resize();
     }
   }, []);
 
-  // Throttled версия для производительности
   const throttledResize = useCallback(throttle(handleResize, 100), [handleResize]);
 
-  // 1. Слушаем resize окна (стандартный подход)
   useEffect(() => {
     window.addEventListener('resize', throttledResize);
     return () => window.removeEventListener('resize', throttledResize);
   }, [throttledResize]);
 
-  // 2. Используем ResizeObserver для отслеживания изменений контейнера
   useEffect(() => {
     if (!containerRef.current) return;
 
     const observer = new ResizeObserver((entries) => {
-      // При любом изменении размера контейнера вызываем resize карты
       throttledResize();
     });
 
@@ -115,9 +110,7 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
     };
   }, [throttledResize]);
 
-  // 3. При первом рендере тоже вызываем resize (для надёжности)
   useEffect(() => {
-    // Небольшая задержка, чтобы DOM успел отрисоваться
     const timeoutId = setTimeout(() => {
       handleResize();
     }, 100);
@@ -160,7 +153,6 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
         validateStyle={process.env.NODE_ENV === "production" ? false : undefined}
         onLoad={() => {
           console.log('✅ MapLibre карта загружена');
-          // Принудительно обновляем размер после загрузки
           handleResize();
         }}
         onError={(e) => console.error('❌ Ошибка MapLibre:', e)}
@@ -175,6 +167,7 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
           getTooltip={getTooltip}
           interleaved={true}
         />
+        {children} {/* Рендерим дочерние компоненты внутри Map */}
       </Map>
     </div>
   );

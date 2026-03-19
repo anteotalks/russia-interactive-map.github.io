@@ -29,13 +29,11 @@ import { CameraControls } from '../../../shared/ui/CameraControls';
 import { SliderWithInput } from '../../../shared/ui/SliderWithInput';
 import { RegionList } from '../../../shared/ui/RegionList';
 import { PaletteName } from '../../../entities/palette/lib/constants';
-import { invertPalette } from '../../../shared/lib/color/utils';
 import { GradientConfig } from '../../../entities/palette/lib/types';
 import { CameraSettings } from '../../../shared/types/camera';
 import { LayerConfig } from '../../../shared/lib/hooks/useMapLayersControl';
 import { FilterSettings } from '../../../shared/types/visualization';
 import { RegionLayerConfig } from '../../../entities/region/lib/types';
-import { AppSettings } from '../../../shared/types/settings';
 
 export type YearType = '2002' | '2010' | '2021';
 export type VisualizationMode = 'dynamics' | 'absolute';
@@ -98,10 +96,10 @@ interface ControlPanelProps {
   onRegionsSelectionChange: (regions: Set<string>) => void;
   onCenterRegion: (region: string) => void;
   onCenterSelectedRegions: () => void;
-  
-  // Новые пропсы для управления сохранением
   onSaveSettings: () => void;
   onResetToDefault: () => void;
+  visiblePointsCount: number;
+  totalPointsCount: number;
 }
 
 const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
@@ -117,7 +115,8 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
     regionConfig, onRegionConfigChange,
     terrainMode, onTerrainModeChange,
     regions, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions,
-    onSaveSettings, onResetToDefault
+    onSaveSettings, onResetToDefault,
+    visiblePointsCount, totalPointsCount,
   } = props;
 
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -198,6 +197,12 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                 <CloseIcon fontSize="small" />
               </IconButton>
             </Box>
+          </Box>
+
+          <Box sx={{ mb: 2, p: 1, bgcolor: 'action.hover', borderRadius: 1, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              Найдено: <strong>{visiblePointsCount}</strong> из {totalPointsCount} населённых пунктов
+            </Typography>
           </Box>
 
           <Tabs value={activeTab} onChange={handleTabChange} sx={{ mb: 2 }} variant="fullWidth">

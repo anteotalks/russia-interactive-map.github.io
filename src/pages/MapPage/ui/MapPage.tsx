@@ -18,6 +18,8 @@ import { useCamera } from '../../../shared/lib/hooks/useCamera';
 import { DEFAULT_FILTER_SETTINGS, FilterSettings, SelectedRegions } from '../../../shared/types/visualization';
 import type { PaletteName } from '../../../entities/palette/lib/constants';
 import { AppSettings, DEFAULT_SETTINGS } from '../../../shared/types/settings';
+import Watermark from '../../../shared/ui/Watermark';
+import Dashboard, { DashboardData } from '../../../shared/ui/Dashboard';
 
 export interface VisualizationSettings {
   selectedYear: YearType;
@@ -87,13 +89,11 @@ export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Загрузка сохранённых настроек или использование дефолтных
   const loadSavedSettings = useCallback((): AppSettings => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as AppSettings;
-        // Проверка версии для будущих миграций
         if (parsed.version === DEFAULT_SETTINGS.version) {
           return parsed;
         }
@@ -104,7 +104,6 @@ export const MapPage: React.FC = () => {
     return DEFAULT_SETTINGS;
   }, []);
 
-  // Состояния с инициализацией из localStorage [citation:1]
   const [settings, setSettings] = useState<VisualizationSettings>(() => 
     loadSavedSettings().visualization
   );
@@ -136,18 +135,17 @@ export const MapPage: React.FC = () => {
     new Set(loadSavedSettings().selectedRegions)
   );
 
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
+
   const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
   
-  // Инициализация палитры из сохранённых настроек
   useEffect(() => {
     const saved = loadSavedSettings();
     if (saved.paletteName !== 'custom') {
       selectPalette(saved.paletteName);
     }
-    if (saved.paletteInverted) {
-      toggleInvert();
-    }
-  }, []); // только при монтировании
+  }, []);
 
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera(() => 
     loadSavedSettings().camera
@@ -156,7 +154,6 @@ export const MapPage: React.FC = () => {
   const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = 
     useMapLayersControl(ALL_BASE_LAYERS);
 
-  // Устанавливаем видимый базовый слой из сохранений
   useEffect(() => {
     const saved = loadSavedSettings();
     const savedLayer = ALL_BASE_LAYERS.find(l => l.id === saved.visibleBaseLayer);
@@ -170,8 +167,8 @@ export const MapPage: React.FC = () => {
   const [dynamicsMax, setDynamicsMax] = useState(100);
 
   const activeRequests = useRef(0);
+  const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
 
-  // Загрузка данных
   useEffect(() => {
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
@@ -236,8 +233,6 @@ export const MapPage: React.FC = () => {
       controller.abort();
     };
   }, []);
-
-  const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
 
   const handleMapViewStateChange = useCallback((newViewState: any) => handleViewStateChange(newViewState), [handleViewStateChange]);
   const handleCameraChange = useCallback((key: keyof typeof cameraSettings, value: number) => { 
@@ -327,9 +322,18 @@ export const MapPage: React.FC = () => {
 
   const filteredLocations = useMemo(() => {
     if (!stableLocations) return null;
-    if (selectedRegions.size === 0) return [];
+    if (selectedRegions.size === 0) return stableLocations;
     return stableLocations.filter(loc => selectedRegions.has(loc.region));
   }, [stableLocations, selectedRegions]);
+
+  const visibleLocations = filteredLocations;
+
+  const handleLayerClick = useCallback((info: any) => {
+    if (!info.object) return;
+    const location = info.object as Location;
+    setDashboardData({ type: 'point', location });
+    setDashboardOpen(true);
+  }, []);
 
   const layerSettings = useMemo(() => ({
     selectedYear: settings.selectedYear,
@@ -348,9 +352,11 @@ export const MapPage: React.FC = () => {
     dynamicsMin: filterSettings.dynamicsMin,
     dynamicsMax: filterSettings.dynamicsMax,
     showZeroPopulation: filterSettings.showZeroPopulation,
-  }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings]);
+    onClick: handleLayerClick,
+    selectedRegionIndices: null,
+  }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings, handleLayerClick]);
 
-  const deckLayers = useMapLayers(filteredLocations, layerSettings, palette);
+  const deckLayers = useMapLayers(visibleLocations, layerSettings, palette);
   const regionLayer = useRegionLayer(regionsData, regionConfig);
 
   const allLayers = useMemo(() => {
@@ -386,9 +392,8 @@ export const MapPage: React.FC = () => {
     return Array.from(uniqueRegions).sort();
   }, [locations]);
 
-  // Автосохранение настроек при любом изменении [citation:5]
   useEffect(() => {
-    if (isLoading) return; // Не сохраняем во время загрузки
+    if (isLoading) return;
 
     const settingsToSave: AppSettings = {
       version: DEFAULT_SETTINGS.version,
@@ -400,7 +405,7 @@ export const MapPage: React.FC = () => {
       visualization: settings,
       paletteName: selectedName,
       customGradient,
-      paletteInverted: selectedName === 'custom' ? false : false, // нужно получить из usePalette
+      paletteInverted: false,
       filterSettings,
       regionConfig,
       selectedRegions: Array.from(selectedRegions),
@@ -422,7 +427,6 @@ export const MapPage: React.FC = () => {
     isLoading
   ]);
 
-  // Сброс к заводским настройкам
   const handleResetToDefault = useCallback(() => {
     if (window.confirm('Сбросить все настройки к значениям по умолчанию?')) {
       localStorage.removeItem(STORAGE_KEY);
@@ -430,9 +434,7 @@ export const MapPage: React.FC = () => {
     }
   }, []);
 
-  // Сохранение настроек вручную (кнопка)
   const handleSaveSettings = useCallback(() => {
-    // Автосохранение уже работает, просто уведомляем
     alert('Настройки сохранены');
   }, []);
 
@@ -462,6 +464,7 @@ export const MapPage: React.FC = () => {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <Watermark />
       <ControlPanel
         settings={settings}
         onSettingsChange={handleSettingsChange}
@@ -509,6 +512,8 @@ export const MapPage: React.FC = () => {
         onCenterSelectedRegions={handleCenterSelectedRegions}
         onSaveSettings={handleSaveSettings}
         onResetToDefault={handleResetToDefault}
+        visiblePointsCount={visibleLocations?.length ?? 0}
+        totalPointsCount={locations?.length ?? 0}
       />
       <MapWidget
         ref={mapRef}
@@ -518,6 +523,15 @@ export const MapPage: React.FC = () => {
         getTooltip={getTooltip}
         viewState={viewState}
         onViewStateChange={handleMapViewStateChange}
+      />
+      <Dashboard
+        open={dashboardOpen}
+        data={dashboardData}
+        onClose={() => setDashboardOpen(false)}
+        selectedYear={settings.selectedYear}
+        dynamicsPeriod={dynamicsMode}
+        mode={mode}
+        absolutePeriod={absolutePeriod}
       />
     </div>
   );
