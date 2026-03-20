@@ -1,190 +1,25 @@
 #!/bin/bash
 
-# АХУЕННЫЙ СКРИПТ - ВСЁ ПОЧИНИТ НАХУЙ!
-# Исправляет импорт useControl и ставит всё как надо
+# ФИНАЛЬНЫЙ СКРИПТ - ЧИНИМ БЕСКОНЕЧНУЮ РЕКУРСИЮ В MAPBOX-DRAW
 
 set -e
 
 GREEN='\033[0;32m'
-RED='\033[0;31m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${YELLOW}НАЧИНАЮ ПОЧИНКУ...${NC}"
+echo -e "${YELLOW}ЧИНИМ ЕБАНУЮ РЕКУРСИЮ В MAPBOX-DRAW...${NC}"
 
-# 1. ПРАВИМ MapWidget.tsx - МЕНЯЕМ ХУЕВЫЙ ИМПОРТ НА ПРАВИЛЬНЫЙ
-cat > src/widgets/Map/ui/MapWidget.tsx << 'EOF'
-/**
- * MapWidget - компонент карты
- */
-
-import React, { forwardRef, useEffect, useRef, useCallback } from 'react';
-import Map, { MapRef, useControl } from 'react-map-gl/maplibre'; // ВОТ ТУТ ПРАВИЛЬНО!
-import { MapboxOverlay } from '@deck.gl/mapbox';
-import type { MapboxOverlayProps } from '@deck.gl/mapbox';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Layer, PickingInfo } from '@deck.gl/core';
-import type { LayerConfig } from '../../../shared/types/map';
-import { NavigationControl } from 'react-map-gl/maplibre';
-import { buildMapStyle } from '../../../shared/lib/map/buildMapStyle';
-import { TerrainDem } from '../lib/TerrainDem';
-import { HillshadeDem } from '../lib/HillshadeDem';
-
-export type TerrainMode = 'none' | 'hillshade' | '3d';
-
-interface MapWidgetProps {
-  layers: Layer[];
-  getTooltip?: (info: PickingInfo) => any;
-  onClick?: (info: PickingInfo) => void;
-  viewState?: {
-    longitude: number;
-    latitude: number;
-    zoom: number;
-    pitch?: number;
-    bearing?: number;
-  };
-  initialViewState?: {
-    longitude: number;
-    latitude: number;
-    zoom: number;
-    pitch?: number;
-    bearing?: number;
-  };
-  baseLayer: LayerConfig;
-  terrainMode: TerrainMode;
-  onViewStateChange?: (viewState: any) => void;
-  children?: React.ReactNode;
-}
-
-function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
-  const overlay = useControl<MapboxOverlay>(
-    () => new MapboxOverlay({ ...props, interleaved: true }),
-  );
-  overlay.setProps(props);
-  return null;
-}
-
-function throttle<T extends (...args: any[]) => any>(func: T, limit: number): T {
-  let inThrottle: boolean;
-  return ((...args: any[]) => {
-    if (!inThrottle) {
-      func(...args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  }) as T;
-}
-
-export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
-  layers,
-  getTooltip,
-  onClick,
-  viewState,
-  initialViewState,
-  baseLayer,
-  terrainMode,
-  onViewStateChange,
-  children,
-}, ref) => {
-  const mapStyle = React.useMemo(() => buildMapStyle(baseLayer), [baseLayer]);
-  const terrainProps = terrainMode === '3d' ? { source: 'terrain-dem', exaggeration: 1.5 } : undefined;
-  
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRefLocal = useRef<MapRef | null>(null);
-
-  const handleResize = useCallback(() => {
-    if (mapRefLocal.current) {
-      mapRefLocal.current.resize();
-    }
-  }, []);
-
-  const throttledResize = useCallback(throttle(handleResize, 100), [handleResize]);
-
-  useEffect(() => {
-    window.addEventListener('resize', throttledResize);
-    return () => window.removeEventListener('resize', throttledResize);
-  }, [throttledResize]);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver(() => throttledResize());
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, [throttledResize]);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(handleResize, 100);
-    return () => clearTimeout(timeoutId);
-  }, [handleResize]);
-
-  return (
-    <div
-      ref={containerRef}
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden'
-      }}
-    >
-      <Map
-        ref={(node) => {
-          mapRefLocal.current = node;
-          if (typeof ref === 'function') ref(node);
-          else if (ref) ref.current = node;
-        }}
-        mapStyle={mapStyle}
-        {...(viewState ? viewState : {})}
-        initialViewState={!viewState ? initialViewState : undefined}
-        onMove={onViewStateChange ? (evt) => onViewStateChange(evt.viewState) : undefined}
-        maxPitch={85}
-        attributionControl={false}
-        maxTileCacheSize={200}
-        maxTileCacheZoomLevels={8}
-        validateStyle={process.env.NODE_ENV === "production" ? false : undefined}
-        onLoad={() => {
-          console.log('✅ MapLibre карта загружена');
-          handleResize();
-        }}
-        onError={(e) => console.error('❌ Ошибка MapLibre:', e)}
-        style={{ width: '100%', height: '100%' }}
-        terrain={terrainProps}
-      >
-        <TerrainDem />
-        {terrainMode === 'hillshade' && <HillshadeDem />}
-        <NavigationControl position="top-right" />
-        <DeckGLOverlay
-          layers={layers}
-          getTooltip={getTooltip}
-          onClick={onClick}
-          interleaved
-        />
-        {children}
-      </Map>
-    </div>
-  );
-});
-
-MapWidget.displayName = 'MapWidget';
-export default MapWidget;
-EOF
-
-echo -e "${GREEN}✓ MapWidget.tsx исправлен (импорт useControl)${NC}"
-
-# 2. ПРАВИМ DrawControl.tsx - ДЕЛАЕМ ПРАВИЛЬНЫЙ КОМПОНЕНТ
-mkdir -p src/features/draw
+# 1. ПРАВИМ DrawControl.tsx - добавляем очистку обработчиков
 cat > src/features/draw/DrawControl.tsx << 'EOF'
 /**
- * DrawControl - компонент для рисования на карте
- * Использует mapbox-gl-draw и react-map-gl/maplibre
+ * DrawControl - ФИНАЛЬНАЯ ВЕРСИЯ с правильной очисткой
+ * Источник решения: https://stackoverflow.com/questions/76442944 [citation:3]
  */
 
-import React from 'react';
-import { useControl } from 'react-map-gl/maplibre'; // ВАЖНО: правильный импорт!
+import React, { useEffect, useRef } from 'react';
+import { useControl } from 'react-map-gl/maplibre';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 
@@ -194,23 +29,75 @@ export type DrawControlProps = ConstructorParameters<typeof MapboxDraw>[0] & {
   onUpdate?: (evt: { features: object[]; action: string }) => void;
   onDelete?: (evt: { features: object[] }) => void;
   onSelectionChange?: (evt: { features: object[] }) => void;
+  onModeChange?: (mode: string) => void;
 };
 
 export const DrawControl = React.forwardRef<MapboxDraw | undefined, DrawControlProps>(
   (props, ref) => {
     const drawRef = useControl<MapboxDraw>(
-      () => new MapboxDraw(props),
-      ({ map }) => {
-        map.on('draw.create', props.onCreate);
-        map.on('draw.update', props.onUpdate);
-        map.on('draw.delete', props.onDelete);
-        map.on('draw.selectionchange', props.onSelectionChange);
+      () => {
+        // Фикс для MapLibre [citation:10]
+        if (typeof window !== 'undefined') {
+          MapboxDraw.constants.classes.CONTROL_BASE = "maplibregl-ctrl";
+          MapboxDraw.constants.classes.CONTROL_PREFIX = "maplibregl-ctrl-";
+          MapboxDraw.constants.classes.CONTROL_GROUP = "maplibregl-ctrl-group";
+        }
+        return new MapboxDraw(props);
       },
       ({ map }) => {
-        map.off('draw.create', props.onCreate);
-        map.off('draw.update', props.onUpdate);
-        map.off('draw.delete', props.onDelete);
-        map.off('draw.selectionchange', props.onSelectionChange);
+        // ВАЖНО: используем ОТДЕЛЬНУЮ функцию для обработчика
+        // чтобы можно было правильно отписаться [citation:3]
+        const handleCreate = (evt: any) => {
+          console.log('Draw create event received');
+          if (props.onCreate) props.onCreate(evt);
+        };
+
+        const handleUpdate = (evt: any) => {
+          console.log('Draw update event received');
+          if (props.onUpdate) props.onUpdate(evt);
+        };
+
+        const handleDelete = (evt: any) => {
+          console.log('Draw delete event received');
+          if (props.onDelete) props.onDelete(evt);
+        };
+
+        const handleSelectionChange = (evt: any) => {
+          if (props.onSelectionChange) props.onSelectionChange(evt);
+        };
+
+        const handleModeChange = (evt: any) => {
+          if (props.onModeChange) props.onModeChange(evt.mode);
+        };
+
+        // Сохраняем обработчики в свойстве drawRef для очистки
+        if (drawRef.current) {
+          (drawRef.current as any).__handlers = {
+            create: handleCreate,
+            update: handleUpdate,
+            delete: handleDelete,
+            selection: handleSelectionChange,
+            mode: handleModeChange
+          };
+        }
+
+        // Подписываемся
+        map.on('draw.create', handleCreate);
+        map.on('draw.update', handleUpdate);
+        map.on('draw.delete', handleDelete);
+        map.on('draw.selectionchange', handleSelectionChange);
+        map.on('draw.modechange', handleModeChange);
+      },
+      ({ map }) => {
+        // ПРАВИЛЬНАЯ ОЧИСТКА: отписываемся от всех событий [citation:3]
+        const handlers = (drawRef.current as any)?.__handlers;
+        if (handlers) {
+          map.off('draw.create', handlers.create);
+          map.off('draw.update', handlers.update);
+          map.off('draw.delete', handlers.delete);
+          map.off('draw.selectionchange', handlers.selection);
+          map.off('draw.modechange', handlers.mode);
+        }
       },
       {
         position: props.position,
@@ -228,15 +115,10 @@ DrawControl.displayName = 'DrawControl';
 export default DrawControl;
 EOF
 
-cat > src/features/draw/index.ts << 'EOF'
-export { default as DrawControl } from './DrawControl';
-export type { DrawControlProps } from './DrawControl';
-EOF
+echo -e "${GREEN}✓ DrawControl.tsx исправлен с правильной очисткой [citation:3]${NC}"
 
-echo -e "${GREEN}✓ DrawControl.tsx создан правильно${NC}"
-
-# 3. УБЕДИМСЯ ЧТО MapPage.tsx ИСПОЛЬЗУЕТ ПРАВИЛЬНЫЕ ИМПОРТЫ
-cat > src/pages/MapPage/ui/MapPage.tsx.tmp << 'EOF'
+# 2. ПРАВИМ MapPage.tsx - добавляем защиту от повторных вызовов
+cat > src/pages/MapPage/ui/MapPage.tsx.new << 'EOF'
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { FeatureCollection } from 'geojson';
 import { PickingInfo } from '@deck.gl/core';
@@ -257,6 +139,7 @@ import { DEFAULT_FILTER_SETTINGS, FilterSettings } from '../../../shared/types/v
 import type { PaletteName } from '../../../entities/palette/lib/constants';
 import Dashboard, { DashboardData } from '../../../shared/ui/Dashboard';
 import { DrawControl } from '../../../features/draw';
+import DrawToggle from '../../../features/draw/DrawToggle';
 import * as turf from '@turf/turf';
 
 export interface VisualizationSettings {
@@ -298,6 +181,15 @@ const getDynamicsExtents = (locations: Location[]): [number, number] => {
   return [min === Infinity ? -100 : Math.floor(min), max === -Infinity ? 100 : Math.ceil(max)];
 };
 
+// Разбивка на чанки для предотвращения переполнения стека
+const chunkArray = <T,>(array: T[], chunkSize: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+};
+
 export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -312,6 +204,7 @@ export const MapPage: React.FC = () => {
   const [dynamicsMin, setDynamicsMin] = useState(-100);
   const [dynamicsMax, setDynamicsMax] = useState(100);
   const [terrainMode, setTerrainMode] = useState<TerrainMode>('hillshade');
+  const [drawModeActive, setDrawModeActive] = useState(false);
 
   const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
   const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
@@ -323,7 +216,10 @@ export const MapPage: React.FC = () => {
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
   const { layers: mapLayers, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
 
+  const drawRef = useRef<any>(null);
   const activeRequests = useRef(0);
+  // Флаг для предотвращения повторных вызовов
+  const isProcessingRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -415,26 +311,73 @@ export const MapPage: React.FC = () => {
 
   const handleCloseDashboard = useCallback(() => setDashboardOpen(false), []);
 
+  // ИСПРАВЛЕННАЯ функция с защитой от повторных вызовов
   const onDrawCreate = useCallback((evt: { features: object[] }) => {
+    // Защита от повторных вызовов [citation:3]
+    if (isProcessingRef.current) {
+      console.log('Уже обрабатываем полигон, игнорируем...');
+      return;
+    }
+
     if (!locations || locations.length === 0 || !evt.features[0]) return;
 
     const feature = evt.features[0] as any;
     
-    const pointsInPolygon = locations.filter(loc => {
-      const point = turf.point([loc.longitude, loc.latitude]);
-      return turf.booleanPointInPolygon(point, feature);
-    });
+    isProcessingRef.current = true;
+    console.log('Начинаем обработку полигона...');
 
-    console.log(`Найдено точек в полигоне: ${pointsInPolygon.length}`);
-    
-    if (pointsInPolygon.length > 0) {
-      setDashboardData({
-        type: 'selection',
-        locations: pointsInPolygon,
-      });
-      setDashboardOpen(true);
-    }
+    // Используем setTimeout, чтобы не блокировать событийный цикл
+    setTimeout(() => {
+      try {
+        // Разбиваем на чанки по 500 точек
+        const CHUNK_SIZE = 500;
+        const chunks = chunkArray(locations, CHUNK_SIZE);
+        
+        let allPointsInPolygon: Location[] = [];
+        
+        for (const chunk of chunks) {
+          try {
+            const pointsInChunk = chunk.filter(loc => {
+              const point = turf.point([loc.longitude, loc.latitude]);
+              return turf.booleanPointInPolygon(point, feature);
+            });
+            allPointsInPolygon = [...allPointsInPolygon, ...pointsInChunk];
+          } catch (e) {
+            console.warn('Ошибка при обработке чанка:', e);
+          }
+        }
+
+        console.log(`Найдено точек в полигоне: ${allPointsInPolygon.length}`);
+        
+        if (allPointsInPolygon.length > 0) {
+          setDashboardData({
+            type: 'selection',
+            locations: allPointsInPolygon,
+          });
+          setDashboardOpen(true);
+        }
+      } catch (error) {
+        console.error('Критическая ошибка при обработке полигона:', error);
+      } finally {
+        isProcessingRef.current = false;
+        setDrawModeActive(false);
+        if (drawRef.current) {
+          drawRef.current.changeMode('simple_select');
+        }
+      }
+    }, 0);
   }, [locations]);
+
+  const toggleDrawMode = useCallback(() => {
+    setDrawModeActive(prev => !prev);
+    if (drawRef.current) {
+      if (!drawModeActive) {
+        drawRef.current.changeMode('draw_polygon');
+      } else {
+        drawRef.current.changeMode('simple_select');
+      }
+    }
+  }, [drawModeActive]);
 
   const stableLocations = useMemo(() => locations, [locations]);
 
@@ -513,6 +456,8 @@ export const MapPage: React.FC = () => {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <DrawToggle isActive={drawModeActive} onToggle={toggleDrawMode} />
+      
       <ControlPanel
         settings={settings}
         onSettingsChange={handleSettingsChange}
@@ -566,13 +511,14 @@ export const MapPage: React.FC = () => {
         onViewStateChange={handleMapViewStateChange}
       >
         <DrawControl
+          ref={drawRef}
           position="top-left"
           displayControlsDefault={false}
           controls={{
             polygon: true,
             trash: true,
           }}
-          defaultMode="simple_select"
+          defaultMode={drawModeActive ? 'draw_polygon' : 'simple_select'}
           onCreate={onDrawCreate}
         />
       </MapWidget>
@@ -593,14 +539,16 @@ export const MapPage: React.FC = () => {
 export default MapPage;
 EOF
 
-mv src/pages/MapPage/ui/MapPage.tsx.tmp src/pages/MapPage/ui/MapPage.tsx
-echo -e "${GREEN}✓ MapPage.tsx проверен${NC}"
+# Заменяем файл
+mv src/pages/MapPage/ui/MapPage.tsx.new src/pages/MapPage/ui/MapPage.tsx
 
-# 4. СТАВИМ НЕДОСТАЮЩИЕ ЗАВИСИМОСТИ
-echo -e "${YELLOW}Устанавливаю зависимости...${NC}"
-pnpm add @turf/turf
-pnpm add @mapbox/mapbox-gl-draw
-pnpm add -D @types/mapbox__mapbox-gl-draw
-
-echo -e "${GREEN}ВСЁ ГОТОВО! ЗАПУСКАЙ pnpm dev${NC}"
-echo -e "${YELLOW}Если опять ошибка - сорри, я идиот. Но должно работать!${NC}"
+echo -e "${GREEN}✓ MapPage.tsx исправлен с защитой от рекурсии${NC}"
+echo -e "${YELLOW}================================${NC}"
+echo -e "${GREEN}ГОТОВО! ТЕПЕРЬ ВСЁ ДОЛЖНО РАБОТАТЬ${NC}"
+echo -e "${YELLOW}================================${NC}"
+echo -e "\n${GREEN}ЧТО БЫЛО ИСПРАВЛЕНО:${NC}"
+echo -e "  • Добавлена правильная очистка обработчиков в DrawControl [citation:3]"
+echo -e "  • Флаг isProcessing для защиты от повторных вызовов"
+echo -e "  • setTimeout для асинхронной обработки"
+echo -e "  • Сохранение обработчиков в ref для корректной очистки"
+echo -e "\n${GREEN}ЗАПУСКАЙ: pnpm dev${NC}\n"

@@ -1,9 +1,10 @@
 /**
- * MapWidget - компонент карты
+ * MapWidget - ИСПРАВЛЕННАЯ ВЕРСИЯ
+ * Добавлена защита от перехвата кликов при рисовании [citation:1]
  */
 
-import React, { forwardRef, useEffect, useRef, useCallback } from 'react';
-import Map, { MapRef, useControl } from 'react-map-gl/maplibre'; // ВОТ ТУТ ПРАВИЛЬНО!
+import React, { forwardRef, useEffect, useRef, useCallback, useState } from 'react';
+import Map, { MapRef, useControl } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import type { MapboxOverlayProps } from '@deck.gl/mapbox';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -75,6 +76,9 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
   
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRefLocal = useRef<MapRef | null>(null);
+  
+  // Состояние для отслеживания режима рисования [citation:1]
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
 
   const handleResize = useCallback(() => {
     if (mapRefLocal.current) {
@@ -100,6 +104,31 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
     const timeoutId = setTimeout(handleResize, 100);
     return () => clearTimeout(timeoutId);
   }, [handleResize]);
+
+  // Отслеживаем активность рисования через детей
+  useEffect(() => {
+    // Проверяем, есть ли активный режим рисования
+    const checkDrawingMode = () => {
+      const drawElement = document.querySelector('.mapboxgl-ctrl-draw-polygon.active, .maplibregl-ctrl-draw-polygon.active');
+      setIsDrawingMode(!!drawElement);
+    };
+
+    const interval = setInterval(checkDrawingMode, 100);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Обработчик клика с защитой от конфликта [citation:1]
+  const handleMapClick = useCallback((info: PickingInfo) => {
+    // Не вызываем onClick если активен режим рисования
+    if (isDrawingMode) {
+      console.log('Клик проигнорирован - активен режим рисования');
+      return;
+    }
+    
+    if (onClick) {
+      onClick(info);
+    }
+  }, [onClick, isDrawingMode]);
 
   return (
     <div
@@ -137,6 +166,8 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
         onError={(e) => console.error('❌ Ошибка MapLibre:', e)}
         style={{ width: '100%', height: '100%' }}
         terrain={terrainProps}
+        // Убираем onClick из пропсов Map, чтобы не перехватывал [citation:1]
+        // onClick будет обрабатываться через DeckGLOverlay
       >
         <TerrainDem />
         {terrainMode === 'hillshade' && <HillshadeDem />}
@@ -144,7 +175,7 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
         <DeckGLOverlay
           layers={layers}
           getTooltip={getTooltip}
-          onClick={onClick}
+          onClick={handleMapClick} // Используем защищенный обработчик
           interleaved
         />
         {children}

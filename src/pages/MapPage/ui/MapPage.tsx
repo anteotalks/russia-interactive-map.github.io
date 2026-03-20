@@ -18,6 +18,7 @@ import { DEFAULT_FILTER_SETTINGS, FilterSettings } from '../../../shared/types/v
 import type { PaletteName } from '../../../entities/palette/lib/constants';
 import Dashboard, { DashboardData } from '../../../shared/ui/Dashboard';
 import { DrawControl } from '../../../features/draw';
+import DrawToggle from '../../../features/draw/DrawToggle';
 import * as turf from '@turf/turf';
 
 export interface VisualizationSettings {
@@ -59,6 +60,15 @@ const getDynamicsExtents = (locations: Location[]): [number, number] => {
   return [min === Infinity ? -100 : Math.floor(min), max === -Infinity ? 100 : Math.ceil(max)];
 };
 
+// Разбивка на чанки для предотвращения переполнения стека
+const chunkArray = <T,>(array: T[], chunkSize: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+};
+
 export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -73,6 +83,7 @@ export const MapPage: React.FC = () => {
   const [dynamicsMin, setDynamicsMin] = useState(-100);
   const [dynamicsMax, setDynamicsMax] = useState(100);
   const [terrainMode, setTerrainMode] = useState<TerrainMode>('hillshade');
+  const [drawModeActive, setDrawModeActive] = useState(false);
 
   const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
   const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
@@ -84,7 +95,10 @@ export const MapPage: React.FC = () => {
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
   const { layers: mapLayers, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
 
+  const drawRef = useRef<any>(null);
   const activeRequests = useRef(0);
+  // Флаг для предотвращения повторных вызовов
+  const isProcessingRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -176,26 +190,73 @@ export const MapPage: React.FC = () => {
 
   const handleCloseDashboard = useCallback(() => setDashboardOpen(false), []);
 
+  // ИСПРАВЛЕННАЯ функция с защитой от повторных вызовов
   const onDrawCreate = useCallback((evt: { features: object[] }) => {
+    // Защита от повторных вызовов [citation:3]
+    if (isProcessingRef.current) {
+      console.log('Уже обрабатываем полигон, игнорируем...');
+      return;
+    }
+
     if (!locations || locations.length === 0 || !evt.features[0]) return;
 
     const feature = evt.features[0] as any;
     
-    const pointsInPolygon = locations.filter(loc => {
-      const point = turf.point([loc.longitude, loc.latitude]);
-      return turf.booleanPointInPolygon(point, feature);
-    });
+    isProcessingRef.current = true;
+    console.log('Начинаем обработку полигона...');
 
-    console.log(`Найдено точек в полигоне: ${pointsInPolygon.length}`);
-    
-    if (pointsInPolygon.length > 0) {
-      setDashboardData({
-        type: 'selection',
-        locations: pointsInPolygon,
-      });
-      setDashboardOpen(true);
-    }
+    // Используем setTimeout, чтобы не блокировать событийный цикл
+    setTimeout(() => {
+      try {
+        // Разбиваем на чанки по 500 точек
+        const CHUNK_SIZE = 500;
+        const chunks = chunkArray(locations, CHUNK_SIZE);
+        
+        let allPointsInPolygon: Location[] = [];
+        
+        for (const chunk of chunks) {
+          try {
+            const pointsInChunk = chunk.filter(loc => {
+              const point = turf.point([loc.longitude, loc.latitude]);
+              return turf.booleanPointInPolygon(point, feature);
+            });
+            allPointsInPolygon = [...allPointsInPolygon, ...pointsInChunk];
+          } catch (e) {
+            console.warn('Ошибка при обработке чанка:', e);
+          }
+        }
+
+        console.log(`Найдено точек в полигоне: ${allPointsInPolygon.length}`);
+        
+        if (allPointsInPolygon.length > 0) {
+          setDashboardData({
+            type: 'selection',
+            locations: allPointsInPolygon,
+          });
+          setDashboardOpen(true);
+        }
+      } catch (error) {
+        console.error('Критическая ошибка при обработке полигона:', error);
+      } finally {
+        isProcessingRef.current = false;
+        setDrawModeActive(false);
+        if (drawRef.current) {
+          drawRef.current.changeMode('simple_select');
+        }
+      }
+    }, 0);
   }, [locations]);
+
+  const toggleDrawMode = useCallback(() => {
+    setDrawModeActive(prev => !prev);
+    if (drawRef.current) {
+      if (!drawModeActive) {
+        drawRef.current.changeMode('draw_polygon');
+      } else {
+        drawRef.current.changeMode('simple_select');
+      }
+    }
+  }, [drawModeActive]);
 
   const stableLocations = useMemo(() => locations, [locations]);
 
@@ -274,6 +335,8 @@ export const MapPage: React.FC = () => {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <DrawToggle isActive={drawModeActive} onToggle={toggleDrawMode} />
+      
       <ControlPanel
         settings={settings}
         onSettingsChange={handleSettingsChange}
@@ -327,13 +390,14 @@ export const MapPage: React.FC = () => {
         onViewStateChange={handleMapViewStateChange}
       >
         <DrawControl
+          ref={drawRef}
           position="top-left"
           displayControlsDefault={false}
           controls={{
             polygon: true,
             trash: true,
           }}
-          defaultMode="simple_select"
+          defaultMode={drawModeActive ? 'draw_polygon' : 'simple_select'}
           onCreate={onDrawCreate}
         />
       </MapWidget>
