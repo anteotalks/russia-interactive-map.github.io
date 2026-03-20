@@ -17,7 +17,8 @@ import { useCamera } from '../../../shared/lib/hooks/useCamera';
 import { DEFAULT_FILTER_SETTINGS, FilterSettings } from '../../../shared/types/visualization';
 import type { PaletteName } from '../../../entities/palette/lib/constants';
 import Dashboard, { DashboardData } from '../../../shared/ui/Dashboard';
-import { DrawControl, DrawControlHandle } from '../../../features/draw';
+import { DrawControl, DrawControlHandle } from '../../../features/lasso';
+import DrawToggle from '../../../features/draw/DrawToggle';
 import * as turf from '@turf/turf';
 
 export interface VisualizationSettings {
@@ -81,6 +82,7 @@ export const MapPage: React.FC = () => {
   const [dynamicsMin, setDynamicsMin] = useState(-100);
   const [dynamicsMax, setDynamicsMax] = useState(100);
   const [terrainMode, setTerrainMode] = useState<TerrainMode>('hillshade');
+  const [drawModeActive, setDrawModeActive] = useState(false);
 
   const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
   const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
@@ -169,8 +171,14 @@ export const MapPage: React.FC = () => {
   
   const handleTerrainModeChange = useCallback((mode: TerrainMode) => setTerrainMode(mode), []);
 
+  // Обработчик клика по карте
   const handleMapClick = useCallback((info: PickingInfo) => {
     if (!info.picked) return;
+    
+    // Удаляем старый полигон
+    if (drawRef.current) {
+      drawRef.current.deleteAll();
+    }
     
     if (info.layer?.id === 'locations-layer' && info.object) {
       setDashboardData({ type: 'point', location: info.object as Location });
@@ -194,6 +202,11 @@ export const MapPage: React.FC = () => {
 
     const feature = evt.features[0] as any;
     isProcessingRef.current = true;
+
+    // Удаляем старый полигон если есть
+    if (drawRef.current) {
+      drawRef.current.deleteAll();
+    }
 
     try {
       const CHUNK_SIZE = 500;
@@ -220,24 +233,25 @@ export const MapPage: React.FC = () => {
       console.error('Ошибка при обработке полигона:', error);
     } finally {
       isProcessingRef.current = false;
+      setDrawModeActive(false);
+      if (drawRef.current) {
+        drawRef.current.changeMode('simple_select');
+      }
     }
   }, [locations]);
 
-  // Обработчик обновления полигона
-  const onDrawUpdate = useCallback((evt: { features: object[]; action: string }) => {
-    console.log('Polygon updated:', evt.action);
-  }, []);
-
-  // Обработчик удаления полигона
-  const onDrawDelete = useCallback(() => {
-    setDashboardOpen(false);
-    setDashboardData(null);
-  }, []);
-
-  // Обработчик смены режима
-  const onDrawModeChange = useCallback((mode: string) => {
-    console.log('Draw mode changed:', mode);
-  }, []);
+  // Переключение режима рисования
+  const toggleDrawMode = useCallback(() => {
+    setDrawModeActive(prev => !prev);
+    if (drawRef.current) {
+      if (!drawModeActive) {
+        drawRef.current.deleteAll();
+        drawRef.current.changeMode('draw_polygon');
+      } else {
+        drawRef.current.changeMode('simple_select');
+      }
+    }
+  }, [drawModeActive]);
 
   const stableLocations = useMemo(() => locations, [locations]);
 
@@ -316,6 +330,8 @@ export const MapPage: React.FC = () => {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <DrawToggle isActive={drawModeActive} onToggle={toggleDrawMode} />
+      
       <ControlPanel
         settings={settings}
         onSettingsChange={handleSettingsChange}
@@ -376,10 +392,8 @@ export const MapPage: React.FC = () => {
             polygon: true,
             trash: true,
           }}
+          defaultMode={drawModeActive ? 'draw_polygon' : 'simple_select'}
           onCreate={onDrawCreate}
-          onUpdate={onDrawUpdate}
-          onDelete={onDrawDelete}
-          onModeChange={onDrawModeChange}
         />
       </MapWidget>
       

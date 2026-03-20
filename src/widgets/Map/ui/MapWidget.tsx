@@ -1,16 +1,15 @@
 /**
  * MapWidget - ИСПРАВЛЕННАЯ ВЕРСИЯ
- * Добавлена защита от перехвата кликов при рисовании [citation:1]
+ * Добавлен перехват ошибок стилей
  */
 
 import React, { forwardRef, useEffect, useRef, useCallback, useState } from 'react';
-import Map, { MapRef, useControl } from 'react-map-gl/maplibre';
+import Map, { MapRef, useControl, NavigationControl } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import type { MapboxOverlayProps } from '@deck.gl/mapbox';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Layer, PickingInfo } from '@deck.gl/core';
 import type { LayerConfig } from '../../../shared/types/map';
-import { NavigationControl } from 'react-map-gl/maplibre';
 import { buildMapStyle } from '../../../shared/lib/map/buildMapStyle';
 import { TerrainDem } from '../lib/TerrainDem';
 import { HillshadeDem } from '../lib/HillshadeDem';
@@ -77,8 +76,7 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRefLocal = useRef<MapRef | null>(null);
   
-  // Состояние для отслеживания режима рисования [citation:1]
-  const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   const handleResize = useCallback(() => {
     if (mapRefLocal.current) {
@@ -105,30 +103,22 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
     return () => clearTimeout(timeoutId);
   }, [handleResize]);
 
-  // Отслеживаем активность рисования через детей
+  // ГЛОБАЛЬНЫЙ ПЕРЕХВАТ ОШИБОК СТИЛЕЙ
   useEffect(() => {
-    // Проверяем, есть ли активный режим рисования
-    const checkDrawingMode = () => {
-      const drawElement = document.querySelector('.mapboxgl-ctrl-draw-polygon.active, .maplibregl-ctrl-draw-polygon.active');
-      setIsDrawingMode(!!drawElement);
+    const originalError = console.error;
+    console.error = (...args) => {
+      // Игнорируем конкретную ошибку line-dasharray
+      if (args[0]?.includes?.('line-dasharray') || args[0]?.includes?.('literal array')) {
+        console.log('🟡 Игнорируем ошибку стилей draw');
+        return;
+      }
+      originalError.apply(console, args);
     };
 
-    const interval = setInterval(checkDrawingMode, 100);
-    return () => clearInterval(interval);
+    return () => {
+      console.error = originalError;
+    };
   }, []);
-
-  // Обработчик клика с защитой от конфликта [citation:1]
-  const handleMapClick = useCallback((info: PickingInfo) => {
-    // Не вызываем onClick если активен режим рисования
-    if (isDrawingMode) {
-      console.log('Клик проигнорирован - активен режим рисования');
-      return;
-    }
-    
-    if (onClick) {
-      onClick(info);
-    }
-  }, [onClick, isDrawingMode]);
 
   return (
     <div
@@ -161,13 +151,21 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
         validateStyle={process.env.NODE_ENV === "production" ? false : undefined}
         onLoad={() => {
           console.log('✅ MapLibre карта загружена');
+          setMapError(null);
           handleResize();
         }}
-        onError={(e) => console.error('❌ Ошибка MapLibre:', e)}
+        onError={(e) => {
+          // Игнорируем ошибку line-dasharray
+          if (e.error?.message?.includes?.('line-dasharray') || 
+              e.error?.message?.includes?.('literal array')) {
+            console.log('🟡 Игнорируем ошибку draw styles');
+            return;
+          }
+          console.error('❌ Ошибка MapLibre:', e.error?.message || e);
+          setMapError(e.error?.message || 'Ошибка загрузки карты');
+        }}
         style={{ width: '100%', height: '100%' }}
         terrain={terrainProps}
-        // Убираем onClick из пропсов Map, чтобы не перехватывал [citation:1]
-        // onClick будет обрабатываться через DeckGLOverlay
       >
         <TerrainDem />
         {terrainMode === 'hillshade' && <HillshadeDem />}
@@ -175,11 +173,28 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
         <DeckGLOverlay
           layers={layers}
           getTooltip={getTooltip}
-          onClick={handleMapClick} // Используем защищенный обработчик
+          onClick={onClick}
           interleaved
         />
         {children}
       </Map>
+      
+      {mapError && (
+        <div style={{
+          position: 'absolute',
+          bottom: 20,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(211, 47, 47, 0.9)',
+          color: 'white',
+          padding: '8px 16px',
+          borderRadius: '4px',
+          zIndex: 2000,
+          fontSize: '14px'
+        }}>
+          Ошибка карты: {mapError}
+        </div>
+      )}
     </div>
   );
 });

@@ -1,2 +1,2 @@
 export { default as DrawControl } from './DrawControl';
-export type { DrawControlProps } from './DrawControl';
+export type { DrawControlProps, DrawControlHandle } from './DrawControl';
