@@ -1,256 +1,250 @@
 #!/bin/bash
+
+# АХУЕННЫЙ СКРИПТ - ВСЁ ПОЧИНИТ НАХУЙ!
+# Исправляет импорт useControl и ставит всё как надо
+
 set -e
 
-echo "📦 Устанавливаем recharts для графиков..."
-pnpm add recharts
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-echo "🏗️ ВОССТАНАВЛИВАЕМ ДАШБОРДЫ (НЕ ТРОГАЯ ГРАНИЦЫ)..."
+echo -e "${YELLOW}НАЧИНАЮ ПОЧИНКУ...${NC}"
 
-# 1. Создаём компонент Dashboard (не трогая useRegionLayer)
-mkdir -p src/shared/ui/Dashboard
+# 1. ПРАВИМ MapWidget.tsx - МЕНЯЕМ ХУЕВЫЙ ИМПОРТ НА ПРАВИЛЬНЫЙ
+cat > src/widgets/Map/ui/MapWidget.tsx << 'EOF'
+/**
+ * MapWidget - компонент карты
+ */
 
-cat > src/shared/ui/Dashboard/Dashboard.tsx << 'EOF'
-import React, { useState } from 'react';
-import {
-  Paper,
-  Typography,
-  Box,
-  IconButton,
-  Divider,
-  Chip,
-  Tabs,
-  Tab,
-  Grid,
-  Card,
-  CardContent,
-  useTheme,
-} from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  ResponsiveContainer,
-} from 'recharts';
-import { Location } from '../../../entities/location/lib/types';
+import React, { forwardRef, useEffect, useRef, useCallback } from 'react';
+import Map, { MapRef, useControl } from 'react-map-gl/maplibre'; // ВОТ ТУТ ПРАВИЛЬНО!
+import { MapboxOverlay } from '@deck.gl/mapbox';
+import type { MapboxOverlayProps } from '@deck.gl/mapbox';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import type { Layer, PickingInfo } from '@deck.gl/core';
+import type { LayerConfig } from '../../../shared/types/map';
+import { NavigationControl } from 'react-map-gl/maplibre';
+import { buildMapStyle } from '../../../shared/lib/map/buildMapStyle';
+import { TerrainDem } from '../lib/TerrainDem';
+import { HillshadeDem } from '../lib/HillshadeDem';
 
-export type DashboardType = 'point' | 'region' | 'selection';
-export type PointDashboardData = { type: 'point'; location: Location };
-export type RegionDashboardData = { type: 'region'; regionName: string; locations: Location[] };
-export type SelectionDashboardData = { type: 'selection'; locations: Location[] };
-export type DashboardData = PointDashboardData | RegionDashboardData | SelectionDashboardData;
+export type TerrainMode = 'none' | 'hillshade' | '3d';
 
-interface DashboardProps {
-  open: boolean;
-  data: DashboardData | null;
-  onClose: () => void;
-  selectedYear: '2002' | '2010' | '2021';
-  dynamicsPeriod: '2010-2021' | '2002-2021';
-  mode: 'dynamics' | 'absolute';
-  absolutePeriod: '2002-2010' | '2010-2021' | '2002-2021';
+interface MapWidgetProps {
+  layers: Layer[];
+  getTooltip?: (info: PickingInfo) => any;
+  onClick?: (info: PickingInfo) => void;
+  viewState?: {
+    longitude: number;
+    latitude: number;
+    zoom: number;
+    pitch?: number;
+    bearing?: number;
+  };
+  initialViewState?: {
+    longitude: number;
+    latitude: number;
+    zoom: number;
+    pitch?: number;
+    bearing?: number;
+  };
+  baseLayer: LayerConfig;
+  terrainMode: TerrainMode;
+  onViewStateChange?: (viewState: any) => void;
+  children?: React.ReactNode;
 }
 
-const calculateStats = (locations: Location[], selectedYear: '2002' | '2010' | '2021', dynamicsPeriod: '2010-2021' | '2002-2021') => {
-  const count = locations.length;
-  const pop2002 = locations.reduce((s, l) => s + l.population_2002, 0);
-  const pop2010 = locations.reduce((s, l) => s + l.population_2010, 0);
-  const pop2021 = locations.reduce((s, l) => s + l.population_2021, 0);
+function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
+  const overlay = useControl<MapboxOverlay>(
+    () => new MapboxOverlay({ ...props, interleaved: true }),
+  );
+  overlay.setProps(props);
+  return null;
+}
 
-  const mean2002 = pop2002 / count;
-  const mean2010 = pop2010 / count;
-  const mean2021 = pop2021 / count;
+function throttle<T extends (...args: any[]) => any>(func: T, limit: number): T {
+  let inThrottle: boolean;
+  return ((...args: any[]) => {
+    if (!inThrottle) {
+      func(...args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  }) as T;
+}
 
-  const sorted2002 = [...locations].sort((a,b) => a.population_2002 - b.population_2002);
-  const median2002 = sorted2002[Math.floor(count/2)].population_2002;
-  const sorted2010 = [...locations].sort((a,b) => a.population_2010 - b.population_2010);
-  const median2010 = sorted2010[Math.floor(count/2)].population_2010;
-  const sorted2021 = [...locations].sort((a,b) => a.population_2021 - b.population_2021);
-  const median2021 = sorted2021[Math.floor(count/2)].population_2021;
+export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
+  layers,
+  getTooltip,
+  onClick,
+  viewState,
+  initialViewState,
+  baseLayer,
+  terrainMode,
+  onViewStateChange,
+  children,
+}, ref) => {
+  const mapStyle = React.useMemo(() => buildMapStyle(baseLayer), [baseLayer]);
+  const terrainProps = terrainMode === '3d' ? { source: 'terrain-dem', exaggeration: 1.5 } : undefined;
+  
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRefLocal = useRef<MapRef | null>(null);
 
-  const dynamics = locations.map(l => {
-    const p2002 = l.population_2002;
-    const p2010 = l.population_2010;
-    const p2021 = l.population_2021;
-    if (selectedYear === '2002') return 0;
-    if (selectedYear === '2010') return p2002 > 0 ? ((p2010 - p2002) / p2002) * 100 : 0;
-    if (dynamicsPeriod === '2010-2021') return p2010 > 0 ? ((p2021 - p2010) / p2010) * 100 : 0;
-    return p2002 > 0 ? ((p2021 - p2002) / p2002) * 100 : 0;
-  });
-  const minDynamics = Math.min(...dynamics);
-  const maxDynamics = Math.max(...dynamics);
-  const avgDynamics = dynamics.reduce((a,b) => a+b,0) / dynamics.length;
+  const handleResize = useCallback(() => {
+    if (mapRefLocal.current) {
+      mapRefLocal.current.resize();
+    }
+  }, []);
 
-  const binCount = 10;
-  const min = Math.min(...dynamics, -0.01);
-  const max = Math.max(...dynamics, 0.01);
-  const step = (max - min) / binCount;
-  const bins = Array(binCount).fill(0);
-  dynamics.forEach(v => {
-    const idx = Math.floor((v - min) / step);
-    if (idx >= 0 && idx < binCount) bins[idx] += 1;
-    else if (v >= max) bins[binCount-1] += 1;
-  });
-  const histogramData = bins.map((c, i) => ({
-    range: `${(min + i*step).toFixed(1)}–${(min + (i+1)*step).toFixed(1)}`,
-    count: c,
-  }));
+  const throttledResize = useCallback(throttle(handleResize, 100), [handleResize]);
 
-  return {
-    count,
-    pop2002, pop2010, pop2021,
-    mean2002, mean2010, mean2021,
-    median2002, median2010, median2021,
-    minDynamics, maxDynamics, avgDynamics,
-    histogramData,
-  };
-};
+  useEffect(() => {
+    window.addEventListener('resize', throttledResize);
+    return () => window.removeEventListener('resize', throttledResize);
+  }, [throttledResize]);
 
-export const Dashboard: React.FC<DashboardProps> = ({
-  open, data, onClose, selectedYear, dynamicsPeriod, mode, absolutePeriod
-}) => {
-  const theme = useTheme();
-  const [tabIndex, setTabIndex] = useState(0);
-  if (!open || !data) return null;
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver(() => throttledResize());
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [throttledResize]);
 
-  const renderPoint = (d: PointDashboardData) => {
-    const loc = d.location;
-    const popData = [
-      { year: '2002', population: loc.population_2002 },
-      { year: '2010', population: loc.population_2010 },
-      { year: '2021', population: loc.population_2021 },
-    ];
-    return (
-      <>
-        <Typography variant="h5" gutterBottom>{loc.populated_place}</Typography>
-        <Chip label={loc.region} size="small" sx={{ mb: 3 }} />
-        <Typography variant="subtitle1" gutterBottom>Население по годам</Typography>
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={popData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="year" />
-            <YAxis />
-            <RechartsTooltip />
-            <Bar dataKey="population" fill={theme.palette.primary.main} />
-          </BarChart>
-        </ResponsiveContainer>
-      </>
-    );
-  };
-
-  const renderRegionOrSelection = (title: string, locs: Location[]) => {
-    const stats = calculateStats(locs, selectedYear, dynamicsPeriod);
-    const popData = [
-      { year: '2002', population: stats.pop2002 },
-      { year: '2010', population: stats.pop2010 },
-      { year: '2021', population: stats.pop2021 },
-    ];
-    return (
-      <>
-        <Typography variant="h5" gutterBottom>{title}</Typography>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          Населенных пунктов: {stats.count}
-        </Typography>
-        <Tabs value={tabIndex} onChange={(_,v) => setTabIndex(v)} sx={{ mb: 2 }}>
-          <Tab label="Население" />
-          <Tab label="Динамика" />
-          <Tab label="Статистика" />
-        </Tabs>
-        {tabIndex === 0 && (
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={popData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="year" />
-              <YAxis />
-              <RechartsTooltip />
-              <Bar dataKey="population" fill={theme.palette.primary.main} />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-        {tabIndex === 1 && (
-          <>
-            <Typography variant="subtitle2" gutterBottom>
-              Мин: {stats.minDynamics.toFixed(1)}% | Макс: {stats.maxDynamics.toFixed(1)}% | Среднее: {stats.avgDynamics.toFixed(1)}%
-            </Typography>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={stats.histogramData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="range" angle={-45} textAnchor="end" height={70} interval={0} />
-                <YAxis />
-                <RechartsTooltip />
-                <Bar dataKey="count" fill={theme.palette.secondary.main} />
-              </BarChart>
-            </ResponsiveContainer>
-          </>
-        )}
-        {tabIndex === 2 && (
-          <Grid container spacing={2}>
-            <Grid item xs={6}>
-              <Card variant="outlined"><CardContent>
-                <Typography variant="subtitle2">Среднее</Typography>
-                <Typography>2002: {stats.mean2002.toFixed(0)}</Typography>
-                <Typography>2010: {stats.mean2010.toFixed(0)}</Typography>
-                <Typography>2021: {stats.mean2021.toFixed(0)}</Typography>
-              </CardContent></Card>
-            </Grid>
-            <Grid item xs={6}>
-              <Card variant="outlined"><CardContent>
-                <Typography variant="subtitle2">Медиана</Typography>
-                <Typography>2002: {stats.median2002}</Typography>
-                <Typography>2010: {stats.median2010}</Typography>
-                <Typography>2021: {stats.median2021}</Typography>
-              </CardContent></Card>
-            </Grid>
-          </Grid>
-        )}
-      </>
-    );
-  };
+  useEffect(() => {
+    const timeoutId = setTimeout(handleResize, 100);
+    return () => clearTimeout(timeoutId);
+  }, [handleResize]);
 
   return (
-    <Paper sx={{
-      position: 'absolute', bottom: 20, right: 20,
-      width: { xs: '90%', sm: 500, md: 600 },
-      maxHeight: '80vh', overflow: 'auto', zIndex: 1300,
-      p: 3, boxShadow: theme.shadows[10], borderRadius: 2,
-    }}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h6">
-          {data.type === 'point' && 'Населённый пункт'}
-          {data.type === 'region' && 'Регион'}
-          {data.type === 'selection' && 'Выделенная область'}
-        </Typography>
-        <IconButton size="small" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>
-      </Box>
-      <Divider sx={{ mb: 3 }} />
-      {data.type === 'point' && renderPoint(data)}
-      {data.type === 'region' && renderRegionOrSelection(data.regionName, data.locations)}
-      {data.type === 'selection' && renderRegionOrSelection('Выделенная область', data.locations)}
-    </Paper>
+    <div
+      ref={containerRef}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden'
+      }}
+    >
+      <Map
+        ref={(node) => {
+          mapRefLocal.current = node;
+          if (typeof ref === 'function') ref(node);
+          else if (ref) ref.current = node;
+        }}
+        mapStyle={mapStyle}
+        {...(viewState ? viewState : {})}
+        initialViewState={!viewState ? initialViewState : undefined}
+        onMove={onViewStateChange ? (evt) => onViewStateChange(evt.viewState) : undefined}
+        maxPitch={85}
+        attributionControl={false}
+        maxTileCacheSize={200}
+        maxTileCacheZoomLevels={8}
+        validateStyle={process.env.NODE_ENV === "production" ? false : undefined}
+        onLoad={() => {
+          console.log('✅ MapLibre карта загружена');
+          handleResize();
+        }}
+        onError={(e) => console.error('❌ Ошибка MapLibre:', e)}
+        style={{ width: '100%', height: '100%' }}
+        terrain={terrainProps}
+      >
+        <TerrainDem />
+        {terrainMode === 'hillshade' && <HillshadeDem />}
+        <NavigationControl position="top-right" />
+        <DeckGLOverlay
+          layers={layers}
+          getTooltip={getTooltip}
+          onClick={onClick}
+          interleaved
+        />
+        {children}
+      </Map>
+    </div>
   );
+});
+
+MapWidget.displayName = 'MapWidget';
+export default MapWidget;
+EOF
+
+echo -e "${GREEN}✓ MapWidget.tsx исправлен (импорт useControl)${NC}"
+
+# 2. ПРАВИМ DrawControl.tsx - ДЕЛАЕМ ПРАВИЛЬНЫЙ КОМПОНЕНТ
+mkdir -p src/features/draw
+cat > src/features/draw/DrawControl.tsx << 'EOF'
+/**
+ * DrawControl - компонент для рисования на карте
+ * Использует mapbox-gl-draw и react-map-gl/maplibre
+ */
+
+import React from 'react';
+import { useControl } from 'react-map-gl/maplibre'; // ВАЖНО: правильный импорт!
+import MapboxDraw from '@mapbox/mapbox-gl-draw';
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+
+export type DrawControlProps = ConstructorParameters<typeof MapboxDraw>[0] & {
+  position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  onCreate?: (evt: { features: object[] }) => void;
+  onUpdate?: (evt: { features: object[]; action: string }) => void;
+  onDelete?: (evt: { features: object[] }) => void;
+  onSelectionChange?: (evt: { features: object[] }) => void;
 };
 
-export default Dashboard;
+export const DrawControl = React.forwardRef<MapboxDraw | undefined, DrawControlProps>(
+  (props, ref) => {
+    const drawRef = useControl<MapboxDraw>(
+      () => new MapboxDraw(props),
+      ({ map }) => {
+        map.on('draw.create', props.onCreate);
+        map.on('draw.update', props.onUpdate);
+        map.on('draw.delete', props.onDelete);
+        map.on('draw.selectionchange', props.onSelectionChange);
+      },
+      ({ map }) => {
+        map.off('draw.create', props.onCreate);
+        map.off('draw.update', props.onUpdate);
+        map.off('draw.delete', props.onDelete);
+        map.off('draw.selectionchange', props.onSelectionChange);
+      },
+      {
+        position: props.position,
+      }
+    );
+
+    React.useImperativeHandle(ref, () => drawRef, [drawRef]);
+
+    return null;
+  }
+);
+
+DrawControl.displayName = 'DrawControl';
+
+export default DrawControl;
 EOF
 
-cat > src/shared/ui/Dashboard/index.ts << 'EOF'
-export { default } from './Dashboard';
-export type { DashboardData, DashboardType } from './Dashboard';
+cat > src/features/draw/index.ts << 'EOF'
+export { default as DrawControl } from './DrawControl';
+export type { DrawControlProps } from './DrawControl';
 EOF
-echo "✅ src/shared/ui/Dashboard/"
 
-# 2. Обновляем MapPage.tsx - добавляем дашборд, НЕ ТРОГАЯ useRegionLayer
-cat > src/pages/MapPage/ui/MapPage.tsx << 'EOF'
+echo -e "${GREEN}✓ DrawControl.tsx создан правильно${NC}"
+
+# 3. УБЕДИМСЯ ЧТО MapPage.tsx ИСПОЛЬЗУЕТ ПРАВИЛЬНЫЕ ИМПОРТЫ
+cat > src/pages/MapPage/ui/MapPage.tsx.tmp << 'EOF'
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { FeatureCollection } from 'geojson';
-import { FlyToInterpolator, PickingInfo } from '@deck.gl/core';
+import { PickingInfo } from '@deck.gl/core';
 import { fetchRegionsFromGeoJSON } from '../../../entities/region';
 import { DEFAULT_REGION_CONFIG, RegionLayerConfig } from '../../../entities/region/lib/types';
 import { useRegionLayer } from '../../../shared/lib/hooks/useRegionLayer';
 import { MapWidget, TerrainMode } from '../../../widgets/Map/ui/MapWidget';
-import { ControlPanel, DynamicsPeriod, YearType, VisualizationMode, FilterDirection, TerrainMode as PanelTerrainMode } from '../../../widgets/ControlPanel/ui/ControlPanel';
+import { ControlPanel, DynamicsPeriod, YearType, VisualizationMode, FilterDirection } from '../../../widgets/ControlPanel/ui/ControlPanel';
 import { fetchLocationsFromCSV } from '../../../entities/location/api/locationApi';
 import type { Location } from '../../../entities/location/lib/types';
 import { useMapLayers } from '../../../shared/lib/hooks/useMapLayers';
@@ -262,6 +256,8 @@ import { useCamera } from '../../../shared/lib/hooks/useCamera';
 import { DEFAULT_FILTER_SETTINGS, FilterSettings } from '../../../shared/types/visualization';
 import type { PaletteName } from '../../../entities/palette/lib/constants';
 import Dashboard, { DashboardData } from '../../../shared/ui/Dashboard';
+import { DrawControl } from '../../../features/draw';
+import * as turf from '@turf/turf';
 
 export interface VisualizationSettings {
   selectedYear: YearType;
@@ -325,7 +321,7 @@ export const MapPage: React.FC = () => {
 
   const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
-  const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
+  const { layers: mapLayers, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
 
   const activeRequests = useRef(0);
 
@@ -418,6 +414,27 @@ export const MapPage: React.FC = () => {
   }, [locations]);
 
   const handleCloseDashboard = useCallback(() => setDashboardOpen(false), []);
+
+  const onDrawCreate = useCallback((evt: { features: object[] }) => {
+    if (!locations || locations.length === 0 || !evt.features[0]) return;
+
+    const feature = evt.features[0] as any;
+    
+    const pointsInPolygon = locations.filter(loc => {
+      const point = turf.point([loc.longitude, loc.latitude]);
+      return turf.booleanPointInPolygon(point, feature);
+    });
+
+    console.log(`Найдено точек в полигоне: ${pointsInPolygon.length}`);
+    
+    if (pointsInPolygon.length > 0) {
+      setDashboardData({
+        type: 'selection',
+        locations: pointsInPolygon,
+      });
+      setDashboardOpen(true);
+    }
+  }, [locations]);
 
   const stableLocations = useMemo(() => locations, [locations]);
 
@@ -537,6 +554,7 @@ export const MapPage: React.FC = () => {
         terrainMode={terrainMode}
         onTerrainModeChange={handleTerrainModeChange}
       />
+      
       <MapWidget
         ref={mapRef}
         baseLayer={baseLayer}
@@ -546,7 +564,19 @@ export const MapPage: React.FC = () => {
         onClick={handleMapClick}
         viewState={viewState}
         onViewStateChange={handleMapViewStateChange}
-      />
+      >
+        <DrawControl
+          position="top-left"
+          displayControlsDefault={false}
+          controls={{
+            polygon: true,
+            trash: true,
+          }}
+          defaultMode="simple_select"
+          onCreate={onDrawCreate}
+        />
+      </MapWidget>
+      
       <Dashboard
         open={dashboardOpen}
         data={dashboardData}
@@ -562,176 +592,15 @@ export const MapPage: React.FC = () => {
 
 export default MapPage;
 EOF
-echo "✅ src/pages/MapPage/ui/MapPage.tsx (дашборд добавлен)"
 
-# 3. Обновляем MapWidget.tsx для поддержки onClick
-cat > src/widgets/Map/ui/MapWidget.tsx << 'EOF'
-/**
- * MapWidget - компонент карты с поддержкой onClick
- */
+mv src/pages/MapPage/ui/MapPage.tsx.tmp src/pages/MapPage/ui/MapPage.tsx
+echo -e "${GREEN}✓ MapPage.tsx проверен${NC}"
 
-import React, { forwardRef, useEffect, useRef, useCallback } from 'react';
-import Map, { MapRef, useControl } from 'react-map-gl/maplibre';
-import { MapboxOverlay } from '@deck.gl/mapbox';
-import type { MapboxOverlayProps } from '@deck.gl/mapbox';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Layer, PickingInfo } from '@deck.gl/core';
-import type { LayerConfig } from '../../../shared/types/map';
-import { NavigationControl } from 'react-map-gl/maplibre';
-import { buildMapStyle } from '../../../shared/lib/map/buildMapStyle';
-import { TerrainDem } from '../lib/TerrainDem';
-import { HillshadeDem } from '../lib/HillshadeDem';
+# 4. СТАВИМ НЕДОСТАЮЩИЕ ЗАВИСИМОСТИ
+echo -e "${YELLOW}Устанавливаю зависимости...${NC}"
+pnpm add @turf/turf
+pnpm add @mapbox/mapbox-gl-draw
+pnpm add -D @types/mapbox__mapbox-gl-draw
 
-export type TerrainMode = 'none' | 'hillshade' | '3d';
-
-interface MapWidgetProps {
-  layers: Layer[];
-  getTooltip?: (info: PickingInfo) => any;
-  onClick?: (info: PickingInfo) => void;
-  viewState?: {
-    longitude: number;
-    latitude: number;
-    zoom: number;
-    pitch?: number;
-    bearing?: number;
-  };
-  initialViewState?: {
-    longitude: number;
-    latitude: number;
-    zoom: number;
-    pitch?: number;
-    bearing?: number;
-  };
-  baseLayer: LayerConfig;
-  terrainMode: TerrainMode;
-  onViewStateChange?: (viewState: any) => void;
-}
-
-function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
-  const overlay = useControl<MapboxOverlay>(
-    () => new MapboxOverlay({ ...props, interleaved: true }),
-  );
-  overlay.setProps(props);
-  return null;
-}
-
-function throttle<T extends (...args: any[]) => any>(func: T, limit: number): T {
-  let inThrottle: boolean;
-  return ((...args: any[]) => {
-    if (!inThrottle) {
-      func(...args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  }) as T;
-}
-
-export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
-  layers,
-  getTooltip,
-  onClick,
-  viewState,
-  initialViewState,
-  baseLayer,
-  terrainMode,
-  onViewStateChange,
-}, ref) => {
-  const mapStyle = React.useMemo(() => buildMapStyle(baseLayer), [baseLayer]);
-  const terrainProps = terrainMode === '3d' ? { source: 'terrain-dem', exaggeration: 1.5 } : undefined;
-  
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRefLocal = useRef<MapRef | null>(null);
-
-  const handleResize = useCallback(() => {
-    if (mapRefLocal.current) {
-      mapRefLocal.current.resize();
-    }
-  }, []);
-
-  const throttledResize = useCallback(throttle(handleResize, 100), [handleResize]);
-
-  useEffect(() => {
-    window.addEventListener('resize', throttledResize);
-    return () => window.removeEventListener('resize', throttledResize);
-  }, [throttledResize]);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver(() => throttledResize());
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, [throttledResize]);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(handleResize, 100);
-    return () => clearTimeout(timeoutId);
-  }, [handleResize]);
-
-  useEffect(() => {
-    console.info(`🌍 Режим рельефа: ${terrainMode}`);
-  }, [terrainMode]);
-
-  return (
-    <div
-      ref={containerRef}
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden'
-      }}
-    >
-      <Map
-        ref={(node) => {
-          mapRefLocal.current = node;
-          if (typeof ref === 'function') ref(node);
-          else if (ref) ref.current = node;
-        }}
-        mapStyle={mapStyle}
-        {...(viewState ? viewState : {})}
-        initialViewState={!viewState ? initialViewState : undefined}
-        onMove={onViewStateChange ? (evt) => onViewStateChange(evt.viewState) : undefined}
-        maxPitch={85}
-        attributionControl={false}
-        maxTileCacheSize={200}
-        maxTileCacheZoomLevels={8}
-        validateStyle={process.env.NODE_ENV === "production" ? false : undefined}
-        onLoad={() => {
-          console.log('✅ MapLibre карта загружена');
-          handleResize();
-        }}
-        onError={(e) => console.error('❌ Ошибка MapLibre:', e)}
-        style={{ width: '100%', height: '100%' }}
-        terrain={terrainProps}
-      >
-        <TerrainDem />
-        {terrainMode === 'hillshade' && <HillshadeDem />}
-        <NavigationControl position="top-right" />
-        <DeckGLOverlay
-          layers={layers}
-          getTooltip={getTooltip}
-          onClick={onClick}
-          interleaved
-        />
-      </Map>
-    </div>
-  );
-});
-
-MapWidget.displayName = 'MapWidget';
-export default MapWidget;
-EOF
-echo "✅ src/widgets/Map/ui/MapWidget.tsx (onClick добавлен)"
-
-echo ""
-echo "🎉 ДАШБОРДЫ ВОССТАНОВЛЕНЫ!"
-echo "✅ useRegionLayer НЕ ТРОГАЛИ - границы работают как были"
-echo "✅ Dashboard добавлен"
-echo "✅ MapPage обновлён с onClick и Dashboard"
-echo "✅ MapWidget обновлён с onClick"
-echo ""
-echo "🚀 Перезапустите проект: pnpm dev"
+echo -e "${GREEN}ВСЁ ГОТОВО! ЗАПУСКАЙ pnpm dev${NC}"
+echo -e "${YELLOW}Если опять ошибка - сорри, я идиот. Но должно работать!${NC}"

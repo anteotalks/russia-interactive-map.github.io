@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { FeatureCollection } from 'geojson';
-import { PickingInfo } from '@deck.gl/core';
+import { FlyToInterpolator, PickingInfo } from '@deck.gl/core';
 import { fetchRegionsFromGeoJSON } from '../../../entities/region';
 import { DEFAULT_REGION_CONFIG, RegionLayerConfig } from '../../../entities/region/lib/types';
 import { useRegionLayer } from '../../../shared/lib/hooks/useRegionLayer';
 import { MapWidget, TerrainMode } from '../../../widgets/Map/ui/MapWidget';
-import { ControlPanel, DynamicsPeriod, YearType, VisualizationMode, FilterDirection } from '../../../widgets/ControlPanel/ui/ControlPanel';
+import { ControlPanel, DynamicsPeriod, YearType, VisualizationMode, FilterDirection, TerrainMode as PanelTerrainMode } from '../../../widgets/ControlPanel/ui/ControlPanel';
 import { fetchLocationsFromCSV } from '../../../entities/location/api/locationApi';
 import type { Location } from '../../../entities/location/lib/types';
 import { useMapLayers } from '../../../shared/lib/hooks/useMapLayers';
+import { useHexagonLayer, HexagonLayerSettings } from '../../../shared/lib/hooks/useHexagonLayer'; // <-- новый импорт
 import { useAltKeyPress } from '../../../shared/lib/hooks';
 import { useMapLayersControl } from '../../../shared/lib/hooks/useMapLayersControl';
 import { ALL_BASE_LAYERS } from '../lib/mapLayers';
@@ -17,8 +18,6 @@ import { useCamera } from '../../../shared/lib/hooks/useCamera';
 import { DEFAULT_FILTER_SETTINGS, FilterSettings } from '../../../shared/types/visualization';
 import type { PaletteName } from '../../../entities/palette/lib/constants';
 import Dashboard, { DashboardData } from '../../../shared/ui/Dashboard';
-import { DrawControl } from '../../../features/draw';
-import * as turf from '@turf/turf';
 
 export interface VisualizationSettings {
   selectedYear: YearType;
@@ -30,7 +29,21 @@ export interface VisualizationSettings {
   fillOpacity: number;
 }
 
-const defaultSettings: VisualizationSettings = {
+// Новый тип для выбора визуализации
+export type VisualizationType = 'points' | 'hexagons';
+
+// Расширенные настройки с учётом гексагонов
+export interface ExtendedSettings extends VisualizationSettings {
+  visualizationType: VisualizationType;
+  hexagonRadius: number;      // в метрах
+  hexagonCoverage: number;    // 0-1
+  hexagonExtruded: boolean;
+  hexagonElevationScale: number;
+  hexagonPowerCoefficient: number;
+  hexagonMinElevation: number;
+}
+
+const defaultSettings: ExtendedSettings = {
   selectedYear: '2021',
   minRadius: 2,
   powerCoefficient: 0.5,
@@ -38,6 +51,11 @@ const defaultSettings: VisualizationSettings = {
   strokeWidth: 1,
   strokeColor: '#000000',
   fillOpacity: 0.78,
+  visualizationType: 'points',
+  hexagonRadius: 1000,
+  hexagonCoverage: 0.9,
+  hexagonExtruded: true,
+  hexagonElevationScale: 50,
 };
 
 const getPopulationExtents = (locations: Location[]): [number, number] => {
@@ -62,7 +80,7 @@ const getDynamicsExtents = (locations: Location[]): [number, number] => {
 export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [settings, setSettings] = useState<VisualizationSettings>(defaultSettings);
+  const [settings, setSettings] = useState<ExtendedSettings>(defaultSettings); // используем расширенный тип
   const [mode, setMode] = useState<VisualizationMode>('dynamics');
   const [dynamicsMode, setDynamicsMode] = useState<'2010-2021' | '2002-2021'>('2010-2021');
   const [absolutePeriod, setAbsolutePeriod] = useState<DynamicsPeriod>('2002-2021');
@@ -82,7 +100,7 @@ export const MapPage: React.FC = () => {
 
   const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
-  const { layers: mapLayers, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
+  const { layers: mapLayers, terrainEnabled, toggleLayer, toggleTerrain, baseLayer, viewState, handleViewStateChange, updateViewState } = useMapLayersControl(ALL_BASE_LAYERS);
 
   const activeRequests = useRef(0);
 
@@ -164,6 +182,14 @@ export const MapPage: React.FC = () => {
     if (info.layer?.id === 'locations-layer' && info.object) {
       setDashboardData({ type: 'point', location: info.object as Location });
       setDashboardOpen(true);
+    } else if (info.layer?.id === 'hexagon-layer' && info.object) {
+      // Для гексагонов информация о точках внутри доступна в info.object.points
+      const hex = info.object as any;
+      if (hex.points && hex.points.length > 0) {
+        // Можно показать дашборд с агрегированной информацией
+        setDashboardData({ type: 'selection', locations: hex.points });
+        setDashboardOpen(true);
+      }
     } else if (info.layer?.id === 'regions-layer' && info.object) {
       const feature = info.object as FeatureCollection['features'][0];
       const regionName = feature.properties?.name_rus;
@@ -176,30 +202,10 @@ export const MapPage: React.FC = () => {
 
   const handleCloseDashboard = useCallback(() => setDashboardOpen(false), []);
 
-  const onDrawCreate = useCallback((evt: { features: object[] }) => {
-    if (!locations || locations.length === 0 || !evt.features[0]) return;
-
-    const feature = evt.features[0] as any;
-    
-    const pointsInPolygon = locations.filter(loc => {
-      const point = turf.point([loc.longitude, loc.latitude]);
-      return turf.booleanPointInPolygon(point, feature);
-    });
-
-    console.log(`Найдено точек в полигоне: ${pointsInPolygon.length}`);
-    
-    if (pointsInPolygon.length > 0) {
-      setDashboardData({
-        type: 'selection',
-        locations: pointsInPolygon,
-      });
-      setDashboardOpen(true);
-    }
-  }, [locations]);
-
   const stableLocations = useMemo(() => locations, [locations]);
 
-  const layerSettings = useMemo(() => ({
+  // Настройки для точечного слоя
+  const pointLayerSettings = useMemo(() => ({
     selectedYear: settings.selectedYear,
     powerCoefficient: settings.powerCoefficient,
     radiusScale: settings.radiusScale,
@@ -218,18 +224,52 @@ export const MapPage: React.FC = () => {
     showZeroPopulation: filterSettings.showZeroPopulation,
   }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings]);
 
-  const deckLayers = useMapLayers(stableLocations, layerSettings, palette);
+  // Настройки для гексагонального слоя
+  const hexagonLayerSettings = useMemo((): HexagonLayerSettings => ({
+    mode,
+    selectedYear: settings.selectedYear,
+    dynamicsPeriod: dynamicsMode,
+    absolutePeriod,
+    absoluteFilter,
+    hexagonRadius: settings.hexagonRadius,
+    hexagonCoverage: settings.hexagonCoverage,
+    extruded: settings.hexagonExtruded,
+    elevationScale: settings.hexagonElevationScale,
+    opacity: settings.fillOpacity,
+    populationMin: filterSettings.populationMin,
+    populationMax: filterSettings.populationMax,
+    dynamicsMin: filterSettings.dynamicsMin,
+    dynamicsMax: filterSettings.dynamicsMax,
+    showZeroPopulation: filterSettings.showZeroPopulation,
+    material: undefined, // можно добавить настройку позже
+  }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings]);
+
+  // Создаём слои в зависимости от выбранного типа
+  const pointLayers = useMapLayers(stableLocations, pointLayerSettings, palette);
+  const hexagonLayers = useHexagonLayer(stableLocations, hexagonLayerSettings, palette);
+  
   const regionLayer = useRegionLayer(regionsData, regionConfig);
 
+  // Выбираем активный слой данных
+  const dataLayers = useMemo(() => {
+    if (settings.visualizationType === 'points') {
+      return pointLayers;
+    } else {
+      return hexagonLayers;
+    }
+  }, [settings.visualizationType, pointLayers, hexagonLayers]);
+
+  // Объединяем с региональным слоем
   const allLayers = useMemo(() => {
     const layers = [];
     if (regionConfig.visible && regionLayer) layers.push(regionLayer);
-    if (deckLayers.length > 0) layers.push(...deckLayers);
+    if (dataLayers.length > 0) layers.push(...dataLayers);
     return layers;
-  }, [regionConfig.visible, regionLayer, deckLayers]);
+  }, [regionConfig.visible, regionLayer, dataLayers]);
 
-  const handleSettingsChange = useCallback((newSettings: Partial<VisualizationSettings>) => 
+  const handleSettingsChange = useCallback((newSettings: Partial<ExtendedSettings>) => 
     setSettings(prev => ({ ...prev, ...newSettings })), []);
+  
   const handleModeChange = useCallback((newMode: VisualizationMode) => setMode(newMode), []);
   const handleDynamicsModeChange = useCallback((mode: DynamicsPeriod) => { 
     if (mode === '2010-2021' || mode === '2002-2021') setDynamicsMode(mode); 
@@ -239,13 +279,32 @@ export const MapPage: React.FC = () => {
   const handlePanelVisibilityChange = useCallback((visible: boolean) => setIsPanelVisible(visible), []);
   const handlePaletteNameChange = useCallback((name: PaletteName | 'custom') => selectPalette(name), [selectPalette]);
 
-  const getTooltip = useCallback(({ object }: PickingInfo) => {
+  const getTooltip = useCallback(({ object, layer }: PickingInfo) => {
     if (!object) return null;
-    const location = object as Location;
-    return {
-      html: `<div><strong>${location.populated_place}</strong><br/>Регион: ${location.region}<br/>Население (2002): ${location.population_2002.toLocaleString()}<br/>Население (2010): ${location.population_2010.toLocaleString()}<br/>Население (2021): ${location.population_2021.toLocaleString()}</div>`,
-      style: { backgroundColor: '#111', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px' }
-    };
+    
+    if (layer?.id === 'hexagon-layer') {
+      // Для гексагонов показываем количество точек и средние значения
+      const hex = object as any;
+      const count = hex.points?.length || 0;
+      const colorValue = hex.colorValue?.toFixed(1) || '0';
+      const elevationValue = hex.elevationValue?.toFixed(0) || '0';
+      return {
+        html: `<div>
+          <strong>Гексагон</strong><br/>
+          Точек: ${count}<br/>
+          Значение цвета: ${colorValue}<br/>
+          Высота: ${elevationValue}
+        </div>`,
+        style: { backgroundColor: '#111', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px' }
+      };
+    } else if (layer?.id === 'locations-layer') {
+      const location = object as Location;
+      return {
+        html: `<div><strong>${location.populated_place}</strong><br/>Регион: ${location.region}<br/>Население (2002): ${location.population_2002.toLocaleString()}<br/>Население (2010): ${location.population_2010.toLocaleString()}<br/>Население (2021): ${location.population_2021.toLocaleString()}</div>`,
+        style: { backgroundColor: '#111', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px' }
+      };
+    }
+    return null;
   }, []);
 
   if (isLoading) {
@@ -314,8 +373,18 @@ export const MapPage: React.FC = () => {
         onRegionConfigChange={handleRegionConfigChange}
         terrainMode={terrainMode}
         onTerrainModeChange={handleTerrainModeChange}
+        // Новые пропсы для гексагонов (передаём их через расширение, но ControlPanel пока не знает о них)
+        visualizationType={settings.visualizationType}
+        onVisualizationTypeChange={(type: VisualizationType) => handleSettingsChange({ visualizationType: type })}
+        hexagonRadius={settings.hexagonRadius}
+        onHexagonRadiusChange={(val: number) => handleSettingsChange({ hexagonRadius: val })}
+        hexagonCoverage={settings.hexagonCoverage}
+        onHexagonCoverageChange={(val: number) => handleSettingsChange({ hexagonCoverage: val })}
+        hexagonExtruded={settings.hexagonExtruded}
+        onHexagonExtrudedChange={(val: boolean) => handleSettingsChange({ hexagonExtruded: val })}
+        hexagonElevationScale={settings.hexagonElevationScale}
+        onHexagonElevationScaleChange={(val: number) => handleSettingsChange({ hexagonElevationScale: val })}
       />
-      
       <MapWidget
         ref={mapRef}
         baseLayer={baseLayer}
@@ -325,19 +394,7 @@ export const MapPage: React.FC = () => {
         onClick={handleMapClick}
         viewState={viewState}
         onViewStateChange={handleMapViewStateChange}
-      >
-        <DrawControl
-          position="top-left"
-          displayControlsDefault={false}
-          controls={{
-            polygon: true,
-            trash: true,
-          }}
-          defaultMode="simple_select"
-          onCreate={onDrawCreate}
-        />
-      </MapWidget>
-      
+      />
       <Dashboard
         open={dashboardOpen}
         data={dashboardData}

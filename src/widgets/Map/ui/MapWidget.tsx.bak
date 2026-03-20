@@ -1,9 +1,9 @@
 /**
- * MapWidget - компонент карты
+ * MapWidget - компонент карты с поддержкой onClick
  */
 
 import React, { forwardRef, useEffect, useRef, useCallback } from 'react';
-import Map, { MapRef, useControl } from 'react-map-gl/maplibre'; // ВОТ ТУТ ПРАВИЛЬНО!
+import Map, { MapRef, useControl } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import type { MapboxOverlayProps } from '@deck.gl/mapbox';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -37,7 +37,6 @@ interface MapWidgetProps {
   baseLayer: LayerConfig;
   terrainMode: TerrainMode;
   onViewStateChange?: (viewState: any) => void;
-  children?: React.ReactNode;
 }
 
 function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
@@ -68,7 +67,6 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
   baseLayer,
   terrainMode,
   onViewStateChange,
-  children,
 }, ref) => {
   const mapStyle = React.useMemo(() => buildMapStyle(baseLayer), [baseLayer]);
   const terrainProps = terrainMode === '3d' ? { source: 'terrain-dem', exaggeration: 1.5 } : undefined;
@@ -100,6 +98,10 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
     const timeoutId = setTimeout(handleResize, 100);
     return () => clearTimeout(timeoutId);
   }, [handleResize]);
+
+  useEffect(() => {
+    console.info(`🌍 Режим рельефа: ${terrainMode}`);
+  }, [terrainMode]);
 
   return (
     <div
@@ -147,7 +149,6 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
           onClick={onClick}
           interleaved
         />
-        {children}
       </Map>
     </div>
   );

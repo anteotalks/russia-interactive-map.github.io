@@ -1,0 +1,247 @@
+/**
+ * Хук для создания слоя гексагонов (HexagonLayer)
+ * Агрегирует точки в гексагональные ячейки, цвет и высота определяются
+ * на основе выбранного режима визуализации.
+ */
+
+import { useMemo, useCallback } from 'react';
+import { HexagonLayer } from '@deck.gl/aggregation-layers';
+import type { Color, PickingInfo } from '@deck.gl/core';
+import { Location } from '../../../entities/location/lib/types';
+import {
+  getColorByDynamics,
+  getColorByAbsoluteChange,
+  getAbsoluteChange,
+  getNeutralColor,
+  hexToRgb
+} from '../color/utils';
+import { FilterDirection } from '../../../shared/types/visualization';
+
+export interface HexagonLayerSettings {
+  // Общие настройки
+  mode: 'dynamics' | 'absolute';
+  selectedYear: '2002' | '2010' | '2021';
+  dynamicsPeriod: '2002-2010' | '2010-2021' | '2002-2021';
+  absolutePeriod: '2002-2010' | '2010-2021' | '2002-2021';
+  absoluteFilter: FilterDirection;
+
+  // Настройки внешнего вида гексагонов
+  hexagonRadius: number;          // Радиус гексагона в метрах
+  hexagonCoverage: number;        // Коэффициент заполнения (0-1)
+  extruded: boolean;              // 3D-высота
+  elevationScale: number;         // Множитель высоты
+  material?: any;                 // Материал для освещения
+  opacity: number;                // Прозрачность заливки
+
+  // Фильтры
+  populationMin: number;
+  populationMax: number;
+  dynamicsMin: number;
+  dynamicsMax: number;
+  showZeroPopulation: boolean;
+}
+
+/**
+ * Вычисляет значение для цвета на основе массива точек в бине.
+ * Возвращает число, которое позже будет нормализовано в цвет через colorRange.
+ * Для динамики: средний процент изменения.
+ * Для абсолюта: среднее абсолютное изменение.
+ */
+const getBinColorValue = (
+  points: Location[],
+  settings: HexagonLayerSettings,
+  palette: string[]
+): number => {
+  if (points.length === 0) return 0;
+
+  if (settings.mode === 'absolute') {
+    // Для абсолютного режима возвращаем среднее абсолютное изменение
+    let sum = 0;
+    let count = 0;
+    points.forEach(point => {
+      const change = getAbsoluteChange(point, settings.absolutePeriod);
+      if (!isNaN(change) && isFinite(change)) {
+        sum += change;
+        count++;
+      }
+    });
+    return count > 0 ? sum / count : 0;
+  } else {
+    // Для динамики возвращаем средний процент изменения
+    let sum = 0;
+    let count = 0;
+
+    points.forEach(point => {
+      const pop2002 = point.population_2002;
+      const pop2010 = point.population_2010;
+      const pop2021 = point.population_2021;
+      let changePercent = 0;
+
+      if (settings.selectedYear === '2010') {
+        if (pop2002 > 0) changePercent = ((pop2010 - pop2002) / pop2002) * 100;
+      } else if (settings.selectedYear === '2021') {
+        if (settings.dynamicsPeriod === '2010-2021') {
+          if (pop2010 > 0) changePercent = ((pop2021 - pop2010) / pop2010) * 100;
+        } else {
+          if (pop2002 > 0) changePercent = ((pop2021 - pop2002) / pop2002) * 100;
+        }
+      }
+
+      if (!isNaN(changePercent) && isFinite(changePercent)) {
+        sum += changePercent;
+        count++;
+      }
+    });
+
+    return count > 0 ? sum / count : 0;
+  }
+};
+
+/**
+ * Вычисляет значение для высоты гексагона.
+ * По умолчанию используется население за выбранный год (или абсолютное изменение)
+ */
+const getBinElevationValue = (
+  points: Location[],
+  settings: HexagonLayerSettings
+): number => {
+  if (points.length === 0) return 0;
+
+  if (settings.mode === 'absolute') {
+    // Для абсолютного режима высота пропорциональна модулю изменения
+    let sum = 0;
+    points.forEach(point => {
+      const change = Math.abs(getAbsoluteChange(point, settings.absolutePeriod));
+      if (!isNaN(change) && isFinite(change)) {
+        sum += change;
+      }
+    });
+    return sum / points.length; // средний модуль изменения
+  } else {
+    // Для динамики высота пропорциональна населению за выбранный год
+    let sum = 0;
+    points.forEach(point => {
+      const pop = point[`population_${settings.selectedYear}`];
+      if (!isNaN(pop) && isFinite(pop)) {
+        sum += pop;
+      }
+    });
+    return sum / points.length; // среднее население
+  }
+};
+
+/**
+ * Фильтр точек, попадающих в бин, на основе глобальных настроек.
+ * Возвращает true, если точка должна участвовать в агрегации.
+ */
+const filterPoint = (point: Location, settings: HexagonLayerSettings): boolean => {
+  const pop = point[`population_${settings.selectedYear}`];
+  
+  // Фильтр по населению
+  if (pop < settings.populationMin || pop > settings.populationMax) return false;
+  if (!settings.showZeroPopulation && pop === 0) return false;
+
+  // Фильтр по динамике (опционально, можно применить после агрегации через filterRange, но здесь для предварительной)
+  return true;
+};
+
+export const useHexagonLayer = (
+  data: Location[] | null,
+  settings: HexagonLayerSettings,
+  palette: string[]
+) => {
+  // Предварительно фильтруем данные для оптимизации (чтобы в агрегацию попадали только нужные точки)
+  const filteredData = useMemo(() => {
+    if (!data) return [];
+    return data.filter(point => filterPoint(point, settings));
+  }, [data, settings.populationMin, settings.populationMax, settings.showZeroPopulation, settings.selectedYear]);
+
+  // Создаём HexagonLayer
+  const layer = useMemo(() => {
+    if (!filteredData.length) return null;
+
+    // Определяем цветовую шкалу на основе палитры
+    // Для линейного отображения значений используем colorRange из RGB-массивов
+    const colorRange: Color[] = palette.map(hex => {
+      const [r, g, b] = hexToRgb(hex);
+      return [r, g, b, Math.round(settings.opacity * 255)];
+    });
+
+    // Диапазон значений для цвета (будет вычислен автоматически, но можно задать вручную)
+    // Для динамики обычно -100..100, для абсолюта зависит от данных.
+    // Позволяем deck.gl вычислить автоматически, но можно передать через colorDomain.
+
+    return new HexagonLayer<Location>({
+      id: 'hexagon-layer',
+      data: filteredData,
+
+      // Позиция точки
+      getPosition: (d: Location) => [d.longitude, d.latitude],
+
+      // Агрегация цвета
+      getColorValue: (points: Location[]) => getBinColorValue(points, settings, palette),
+      colorAggregation: 'SUM', // не используется, так как задана getColorValue
+      colorRange,
+      // colorDomain: settings.mode === 'dynamics' ? [-100, 100] : undefined, // можно раскомментировать
+
+      // Агрегация высоты
+      getElevationValue: (points: Location[]) => getBinElevationValue(points, settings),
+      elevationScale: settings.elevationScale,
+      extruded: settings.extruded,
+      elevationRange: [0, 1000], // можно настраивать
+
+      // Геометрия
+      radius: settings.hexagonRadius,
+      coverage: settings.hexagonCoverage,
+
+      // Материал для 3D
+      material: settings.material || {
+        ambient: 0.4,
+        diffuse: 0.6,
+        shininess: 30,
+        specularColor: [255, 255, 255]
+      },
+
+      // Взаимодействие
+      pickable: true,
+      autoHighlight: false,
+      highlightColor: [255, 255, 255, 100],
+
+      // Фильтрация уже применена к данным, но можно добавить дополнительные фильтры через extensions
+
+      // Производительность
+      gpuAggregation: false, // так как используем кастомные getColorValue/getElevationValue
+
+      updateTriggers: {
+        getColorValue: [
+          settings.mode,
+          settings.selectedYear,
+          settings.dynamicsPeriod,
+          settings.absolutePeriod,
+          palette,
+          settings.opacity
+        ],
+        getElevationValue: [
+          settings.mode,
+          settings.selectedYear,
+          settings.dynamicsPeriod,
+          settings.absolutePeriod,
+          settings.absoluteFilter
+        ],
+        radius: [settings.hexagonRadius],
+        coverage: [settings.hexagonCoverage],
+        elevationScale: [settings.elevationScale],
+        extruded: [settings.extruded]
+      },
+
+      parameters: {
+        depthWriteEnabled: true, // для корректного 3D
+        depthCompare: 'less'
+      } as const
+    });
+  }, [filteredData, settings, palette]);
+
+  return useMemo(() => (layer ? [layer] : []), [layer]);
+};
+
+export default useHexagonLayer;
