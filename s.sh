@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# Исправление перетаскивания Dashboard: корректные bounds при открытии
+# Скрипт обновления дашборда: одностраничный + статистика внизу
 # =============================================================================
 
 set -e
@@ -13,7 +13,6 @@ NC='\033[0m'
 
 DASHBOARD_DIR="src/shared/ui/Dashboard"
 DASHBOARD_FILE="$DASHBOARD_DIR/Dashboard.tsx"
-INDEX_FILE="$DASHBOARD_DIR/index.ts"
 BACKUP_SUFFIX=".backup.$(date +%Y%m%d_%H%M%S)"
 
 if [ ! -d "$DASHBOARD_DIR" ]; then
@@ -21,15 +20,11 @@ if [ ! -d "$DASHBOARD_DIR" ]; then
     exit 1
 fi
 
-# Создаём резервную копию
 if [ -f "$DASHBOARD_FILE" ]; then
     echo -e "${YELLOW}📦 Создаю резервную копию $DASHBOARD_FILE -> ${DASHBOARD_FILE}${BACKUP_SUFFIX}${NC}"
     cp "$DASHBOARD_FILE" "${DASHBOARD_FILE}${BACKUP_SUFFIX}"
 fi
 
-# =============================================================================
-# Генерируем новый Dashboard.tsx с исправленным перетаскиванием
-# =============================================================================
 cat > "$DASHBOARD_FILE" << 'EOF'
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import Draggable, { DraggableData, DraggableEvent } from 'react-draggable';
@@ -38,18 +33,17 @@ import {
   Typography,
   Box,
   IconButton,
-  Divider,
   Chip,
-  Tabs,
-  Tab,
+  Divider,
   Grid,
   Card,
   CardContent,
   useTheme,
-  Tooltip,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
 import {
   BarChart,
   Bar,
@@ -59,7 +53,6 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
   Cell,
-  Legend,
 } from 'recharts';
 import { Location } from '../../../entities/location/lib/types';
 
@@ -74,6 +67,7 @@ export interface RegionDashboardData {
   type: 'region';
   regionName: string;
   locations: Location[];
+  existsInGeoJSON?: boolean;
 }
 
 export interface SelectionDashboardData {
@@ -94,7 +88,22 @@ interface DashboardProps {
 }
 
 // =============================================================================
-// Расширенная статистика (аналог старого region_stats)
+// Вспомогательные функции для Крыма
+// =============================================================================
+function isCrimeanRegion(region: string): boolean {
+  const lower = region.toLowerCase();
+  return lower.includes('крым') || lower.includes('севастополь');
+}
+
+function getCorrectedPopulation(location: Location, year: '2002' | '2010' | '2021'): number {
+  if (year === '2002' && isCrimeanRegion(location.region)) {
+    return location.population_2010;
+  }
+  return location[`population_${year}`];
+}
+
+// =============================================================================
+// Расширенная статистика
 // =============================================================================
 interface ExtendedStats {
   count: number;
@@ -134,32 +143,27 @@ const calculateExtendedStats = (
     };
   }
 
-  // Суммы
-  const pop2002 = locations.reduce((s, l) => s + l.population_2002, 0);
+  const pop2002 = locations.reduce((s, l) => s + getCorrectedPopulation(l, '2002'), 0);
   const pop2010 = locations.reduce((s, l) => s + l.population_2010, 0);
   const pop2021 = locations.reduce((s, l) => s + l.population_2021, 0);
 
-  // Средние
   const mean2002 = pop2002 / count;
   const mean2010 = pop2010 / count;
   const mean2021 = pop2021 / count;
 
-  // Медианы
-  const sorted2002 = [...locations].sort((a, b) => a.population_2002 - b.population_2002);
-  const median2002 = sorted2002[Math.floor(count / 2)].population_2002;
+  const sorted2002 = [...locations].sort((a, b) => getCorrectedPopulation(a, '2002') - getCorrectedPopulation(b, '2002'));
+  const median2002 = sorted2002[Math.floor(count / 2)] ? getCorrectedPopulation(sorted2002[Math.floor(count / 2)], '2002') : 0;
   const sorted2010 = [...locations].sort((a, b) => a.population_2010 - b.population_2010);
-  const median2010 = sorted2010[Math.floor(count / 2)].population_2010;
+  const median2010 = sorted2010[Math.floor(count / 2)]?.population_2010 || 0;
   const sorted2021 = [...locations].sort((a, b) => a.population_2021 - b.population_2021);
-  const median2021 = sorted2021[Math.floor(count / 2)].population_2021;
+  const median2021 = sorted2021[Math.floor(count / 2)]?.population_2021 || 0;
 
-  // Динамика общая
   const dyn2002_2010 = pop2002 > 0 ? ((pop2010 - pop2002) / pop2002) * 100 : 0;
   const dyn2010_2021 = pop2010 > 0 ? ((pop2021 - pop2010) / pop2010) * 100 : 0;
   const dyn2002_2021 = pop2002 > 0 ? ((pop2021 - pop2002) / pop2002) * 100 : 0;
 
-  // Динамика отдельных точек для гистограммы
   const dynamicsValues = locations.map(l => {
-    const p2002 = l.population_2002;
+    const p2002 = getCorrectedPopulation(l, '2002');
     const p2010 = l.population_2010;
     const p2021 = l.population_2021;
     if (selectedYear === '2002') return 0;
@@ -172,7 +176,6 @@ const calculateExtendedStats = (
   const maxDynamics = Math.max(...dynamicsValues);
   const avgDynamics = dynamicsValues.reduce((a, b) => a + b, 0) / dynamicsValues.length;
 
-  // Гистограмма распределения динамики (10 бинов)
   const binCount = 10;
   const min = Math.min(...dynamicsValues, -0.01);
   const max = Math.max(...dynamicsValues, 0.01);
@@ -210,7 +213,7 @@ const calculateExtendedStats = (
 };
 
 // =============================================================================
-// Вспомогательная функция для рендеринга заголовка дашборда с перетаскиванием
+// Заголовок дашборда
 // =============================================================================
 interface DashboardHeaderProps {
   title: string;
@@ -225,10 +228,10 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ title, onClose }) => 
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        mb: 2,
+        p: 2,
         cursor: 'move',
         borderBottom: '1px solid #e0e0e0',
-        pb: 1,
+        backgroundColor: '#f8f9fa',
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -243,7 +246,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ title, onClose }) => 
 };
 
 // =============================================================================
-// Основной компонент Dashboard
+// Основной компонент Dashboard (одностраничный, со статистикой внизу)
 // =============================================================================
 export const Dashboard: React.FC<DashboardProps> = ({
   open,
@@ -255,15 +258,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   absolutePeriod,
 }) => {
   const theme = useTheme();
-  const [tabIndex, setTabIndex] = useState(0);
   const nodeRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 20, y: 20 });
   const [bounds, setBounds] = useState({ left: 0, top: 0, right: 0, bottom: 0 });
-  const [size, setSize] = useState({ width: 500, height: 500 });
+  const [size, setSize] = useState({ width: 550, height: 650 });
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
-  // Все хуки вызываются безусловно
   const handleDrag = useCallback((_e: DraggableEvent, data: DraggableData) => {
     setPosition({ x: data.x, y: data.y });
   }, []);
@@ -289,8 +290,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const deltaX = e.clientX - resizeStartRef.current.x;
     const deltaY = e.clientY - resizeStartRef.current.y;
     setSize({
-      width: Math.max(300, resizeStartRef.current.width + deltaX),
-      height: Math.max(200, resizeStartRef.current.height + deltaY),
+      width: Math.max(350, Math.min(900, resizeStartRef.current.width + deltaX)),
+      height: Math.max(400, Math.min(800, resizeStartRef.current.height + deltaY)),
     });
   }, [isResizing]);
 
@@ -298,7 +299,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setIsResizing(false);
   }, []);
 
-  // Функция обновления границ (должна вызываться после рендера)
   const updateBounds = useCallback(() => {
     if (nodeRef.current) {
       const { clientWidth, clientHeight } = document.documentElement;
@@ -307,26 +307,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setBounds({
         left: 0,
         top: 0,
-        right: clientWidth - nodeWidth,
-        bottom: clientHeight - nodeHeight,
+        right: Math.max(0, clientWidth - nodeWidth),
+        bottom: Math.max(0, clientHeight - nodeHeight),
       });
     }
   }, []);
 
-  // Эффект для отслеживания изменения размеров окна
   useEffect(() => {
     window.addEventListener('resize', updateBounds);
     return () => window.removeEventListener('resize', updateBounds);
   }, [updateBounds]);
 
-  // Эффект для обновления границ при открытии дашборда и изменении размера
   useLayoutEffect(() => {
     if (open && nodeRef.current) {
-      updateBounds();
+      const timer = setTimeout(updateBounds, 50);
+      return () => clearTimeout(timer);
     }
-  }, [open, updateBounds, size]); // пересчитываем при изменении размера или открытии
+  }, [open, updateBounds]);
 
-  // Эффект для управления ресайзом
   useEffect(() => {
     if (isResizing) {
       window.addEventListener('mousemove', onResize);
@@ -338,21 +336,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [isResizing, onResize, stopResize]);
 
-  // Ранний возврат, если дашборд не открыт – после всех хуков
   if (!open || !data) return null;
 
   // Рендеринг для точки
   const renderPoint = (d: PointDashboardData) => {
     const loc = d.location;
+    const pop2002Corrected = getCorrectedPopulation(loc, '2002');
     const popData = [
-      { year: '2002', population: loc.population_2002 },
+      { year: '2002', population: pop2002Corrected },
       { year: '2010', population: loc.population_2010 },
       { year: '2021', population: loc.population_2021 },
     ];
+    const isKrym = isCrimeanRegion(loc.region);
+    const yearLabel = isKrym ? '2014' : '2010';
+
     return (
-      <>
+      <Box>
         <Typography variant="h5" gutterBottom>{loc.populated_place}</Typography>
         <Chip label={loc.region} size="small" sx={{ mb: 3 }} />
+
         <Typography variant="subtitle1" gutterBottom>Население по годам</Typography>
         <ResponsiveContainer width="100%" height={250}>
           <BarChart data={popData}>
@@ -363,19 +365,33 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <Bar dataKey="population" fill={theme.palette.primary.main} />
           </BarChart>
         </ResponsiveContainer>
-      </>
+
+        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-around', textAlign: 'center', mb: 3 }}>
+          <Box>
+            <Typography variant="caption" color="text.secondary">2002</Typography>
+            <Typography variant="body1">{pop2002Corrected.toLocaleString()}</Typography>
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary">{yearLabel}</Typography>
+            <Typography variant="body1">{loc.population_2010.toLocaleString()}</Typography>
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary">2021</Typography>
+            <Typography variant="body1">{loc.population_2021.toLocaleString()}</Typography>
+          </Box>
+        </Box>
+      </Box>
     );
   };
 
-  // Рендеринг для региона или выделенной области
-  const renderRegionOrSelection = (title: string, locs: Location[]) => {
+  // Рендеринг для региона или выделенной области (статистика внизу)
+  const renderRegionOrSelection = (title: string, locs: Location[], existsInGeoJSON?: boolean) => {
     const stats = calculateExtendedStats(locs, selectedYear, dynamicsPeriod);
     const popData = [
       { year: '2002', population: stats.pop2002 },
       { year: '2010', population: stats.pop2010 },
       { year: '2021', population: stats.pop2021 },
     ];
-    // Данные для графика динамики в процентах
     const dynData = [
       { period: '2002→2010', value: stats.dyn2002_2010 },
       { period: '2010→2021', value: stats.dyn2010_2021 },
@@ -383,106 +399,106 @@ export const Dashboard: React.FC<DashboardProps> = ({
     ];
 
     return (
-      <>
+      <Box>
         <Typography variant="h5" gutterBottom>{title}</Typography>
         <Typography variant="body2" color="text.secondary" gutterBottom>
           Населенных пунктов: {stats.count}
         </Typography>
 
-        <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} sx={{ mb: 2 }}>
-          <Tab label="Население" />
-          <Tab label="Динамика (%)" />
-          <Tab label="Статистика" />
-          <Tab label="Распределение" />
-        </Tabs>
-
-        {tabIndex === 0 && (
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={popData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="year" />
-              <YAxis />
-              <RechartsTooltip />
-              <Bar dataKey="population" fill={theme.palette.primary.main} />
-            </BarChart>
-          </ResponsiveContainer>
+        {existsInGeoJSON !== undefined && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            {existsInGeoJSON ? (
+              <>
+                <CheckCircleIcon color="success" fontSize="small" />
+                <Typography variant="caption" color="success.main">✓ Регион найден в GeoJSON</Typography>
+              </>
+            ) : (
+              <>
+                <CancelIcon color="error" fontSize="small" />
+                <Typography variant="caption" color="error.main">✗ Регион отсутствует в GeoJSON</Typography>
+              </>
+            )}
+          </Box>
         )}
 
-        {tabIndex === 1 && (
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={dynData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="period" />
-              <YAxis />
-              <RechartsTooltip />
-              <Bar dataKey="value" fill={theme.palette.secondary.main}>
-                {dynData.map((entry, idx) => (
-                  <Cell
-                    key={`cell-${idx}`}
-                    fill={entry.value >= 0 ? theme.palette.success.main : theme.palette.error.main}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
+        <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>Население по годам</Typography>
+        <ResponsiveContainer width="100%" height={250}>
+          <BarChart data={popData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="year" />
+            <YAxis />
+            <RechartsTooltip />
+            <Bar dataKey="population" fill={theme.palette.primary.main} />
+          </BarChart>
+        </ResponsiveContainer>
 
-        {tabIndex === 2 && (
-          <Grid container spacing={2}>
-            <Grid item xs={6}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="subtitle2">Среднее население</Typography>
-                  <Typography>2002: {stats.mean2002.toFixed(0)}</Typography>
-                  <Typography>2010: {stats.mean2010.toFixed(0)}</Typography>
-                  <Typography>2021: {stats.mean2021.toFixed(0)}</Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={6}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="subtitle2">Медиана населения</Typography>
-                  <Typography>2002: {stats.median2002.toLocaleString()}</Typography>
-                  <Typography>2010: {stats.median2010.toLocaleString()}</Typography>
-                  <Typography>2021: {stats.median2021.toLocaleString()}</Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="subtitle2">Динамика (общая)</Typography>
-                  <Typography>2002→2010: {stats.dyn2002_2010.toFixed(1)}%</Typography>
-                  <Typography>2010→2021: {stats.dyn2010_2021.toFixed(1)}%</Typography>
-                  <Typography>2002→2021: {stats.dyn2002_2021.toFixed(1)}%</Typography>
-                </CardContent>
-              </Card>
-            </Grid>
+        <Typography variant="subtitle1" gutterBottom sx={{ mt: 3 }}>Динамика населения (%)</Typography>
+        <ResponsiveContainer width="100%" height={250}>
+          <BarChart data={dynData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="period" />
+            <YAxis />
+            <RechartsTooltip />
+            <Bar dataKey="value">
+              {dynData.map((entry, idx) => (
+                <Cell key={`cell-${idx}`} fill={entry.value >= 0 ? '#1a9641' : '#d7191c'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+
+        <Typography variant="subtitle1" gutterBottom sx={{ mt: 3 }}>Распределение динамики (%)</Typography>
+        <ResponsiveContainer width="100%" height={250}>
+          <BarChart data={stats.histogramData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="range" angle={-45} textAnchor="end" height={70} interval={0} fontSize={10} />
+            <YAxis />
+            <RechartsTooltip />
+            <Bar dataKey="count" fill={theme.palette.info.main} />
+          </BarChart>
+        </ResponsiveContainer>
+
+        <Divider sx={{ my: 3 }} />
+        <Typography variant="subtitle1" gutterBottom>Статистика</Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={6}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="subtitle2">Среднее население</Typography>
+                <Typography variant="body2">2002: {stats.mean2002.toFixed(0)}</Typography>
+                <Typography variant="body2">2010: {stats.mean2010.toFixed(0)}</Typography>
+                <Typography variant="body2">2021: {stats.mean2021.toFixed(0)}</Typography>
+              </CardContent>
+            </Card>
           </Grid>
-        )}
-
-        {tabIndex === 3 && (
-          <>
-            <Typography variant="subtitle2" gutterBottom>
-              Мин: {stats.minDynamics.toFixed(1)}% | Макс: {stats.maxDynamics.toFixed(1)}% | Среднее: {stats.avgDynamics.toFixed(1)}%
-            </Typography>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={stats.histogramData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="range" angle={-45} textAnchor="end" height={70} interval={0} />
-                <YAxis />
-                <RechartsTooltip />
-                <Bar dataKey="count" fill={theme.palette.info.main} />
-              </BarChart>
-            </ResponsiveContainer>
-          </>
-        )}
-      </>
+          <Grid item xs={6}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="subtitle2">Медиана населения</Typography>
+                <Typography variant="body2">2002: {stats.median2002.toLocaleString()}</Typography>
+                <Typography variant="body2">2010: {stats.median2010.toLocaleString()}</Typography>
+                <Typography variant="body2">2021: {stats.median2021.toLocaleString()}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="subtitle2">Общая динамика</Typography>
+                <Typography variant="body2">2002→2010: {stats.dyn2002_2010.toFixed(1)}%</Typography>
+                <Typography variant="body2">2010→2021: {stats.dyn2010_2021.toFixed(1)}%</Typography>
+                <Typography variant="body2">2002→2021: {stats.dyn2002_2021.toFixed(1)}%</Typography>
+                <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
+                  Мин: {stats.minDynamics.toFixed(1)}% | Макс: {stats.maxDynamics.toFixed(1)}% | Среднее: {stats.avgDynamics.toFixed(1)}%
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      </Box>
     );
   };
 
-  // Определяем заголовок
   let title = '';
   if (data.type === 'point') title = 'Населённый пункт';
   else if (data.type === 'region') title = data.regionName;
@@ -501,7 +517,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         ref={nodeRef}
         style={{
           position: 'absolute',
-          zIndex: 1400, // выше, чем у панели управления (1300)
+          zIndex: 1400,
           width: size.width,
           height: size.height,
         }}
@@ -513,18 +529,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
-            backgroundColor: 'rgba(255,255,255,0.98)',
+            backgroundColor: '#ffffff',
             borderRadius: 2,
             boxShadow: 3,
           }}
         >
           <DashboardHeader title={title} onClose={onClose} />
-          <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+          <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
             {data.type === 'point' && renderPoint(data)}
-            {data.type === 'region' && renderRegionOrSelection(data.regionName, data.locations)}
+            {data.type === 'region' && renderRegionOrSelection(data.regionName, data.locations, data.existsInGeoJSON)}
             {data.type === 'selection' && renderRegionOrSelection('Выделенная область', data.locations)}
           </Box>
-          {/* Ресайзер */}
           <Box
             onMouseDown={startResize}
             sx={{
@@ -549,21 +564,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
 export default Dashboard;
 EOF
 
-# =============================================================================
-# Обновляем index.ts (экспорты)
-# =============================================================================
-cat > "$INDEX_FILE" << 'EOF'
-export { default } from './Dashboard';
-export type { DashboardData, DashboardType, PointDashboardData, RegionDashboardData, SelectionDashboardData } from './Dashboard';
-EOF
-
-echo -e "${GREEN}✅ Dashboard исправлен: перетаскивание теперь работает сразу после открытия!${NC}"
-echo -e "${YELLOW}📌 Ключевые изменения:${NC}"
-echo "   - Добавлен useLayoutEffect для пересчёта bounds при открытии и изменении размера"
-echo "   - Зависимость open в эффекте для корректного первого расчёта границ"
-echo "   - Повышен zIndex до 1400 для уверенного перекрытия панели управления"
-echo "   - Все хуки объявлены до условного возврата"
-echo "   - Перетаскивание работает без F11"
+echo -e "${GREEN}✅ Dashboard обновлён: одностраничный, статистика внизу!${NC}"
+echo -e "${YELLOW}📌 Что изменено:${NC}"
+echo "   - Убраны вкладки (Tabs), все графики и статистика на одной странице"
+echo "   - Статистика перемещена в самый низ (после всех графиков)"
+echo "   - Добавлен ограничитель для ресайзера (min/max размеры)"
+echo "   - Исправлен бесконечный цикл обновления (таймаут в useLayoutEffect)"
+echo "   - Порядок: название региона → индикатор GeoJSON → население → динамика → распределение → статистика"
 echo ""
 echo -e "${YELLOW}⚠️  Резервная копия сохранена как ${DASHBOARD_FILE}${BACKUP_SUFFIX}${NC}"
-echo -e "${GREEN}✨ Перезапустите приложение и проверьте перетаскивание дашборда.${NC}"
+echo -e "${GREEN}✨ Готово! Перезапустите приложение.${NC}"
