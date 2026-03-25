@@ -25,6 +25,7 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
   Cell,
+  LabelList,
 } from 'recharts';
 import { Location } from '../../../entities/location/lib/types';
 
@@ -185,6 +186,64 @@ const calculateExtendedStats = (
 };
 
 // =============================================================================
+// Компонент для отображения значений на столбцах
+// =============================================================================
+const renderCustomLabel = (props: any) => {
+  const { x, y, width, value } = props;
+  if (value === undefined || value === null) return null;
+  const formatted = typeof value === 'number' 
+    ? value.toLocaleString(undefined, { maximumFractionDigits: 0 })
+    : value;
+  return (
+    <text
+      x={x + width / 2}
+      y={y - 5}
+      fill="#333"
+      textAnchor="middle"
+      fontSize={11}
+      fontWeight="500"
+    >
+      {formatted}
+    </text>
+  );
+};
+
+const renderPercentLabel = (props: any) => {
+  const { x, y, width, value } = props;
+  if (value === undefined || value === null) return null;
+  const formatted = value.toFixed(1);
+  return (
+    <text
+      x={x + width / 2}
+      y={y - 5}
+      fill={value >= 0 ? '#1a9641' : '#d7191c'}
+      textAnchor="middle"
+      fontSize={11}
+      fontWeight="500"
+    >
+      {formatted}%
+    </text>
+  );
+};
+
+const renderCountLabel = (props: any) => {
+  const { x, y, width, value } = props;
+  if (value === undefined || value === null || value === 0) return null;
+  return (
+    <text
+      x={x + width / 2}
+      y={y - 5}
+      fill="#333"
+      textAnchor="middle"
+      fontSize={11}
+      fontWeight="500"
+    >
+      {value}
+    </text>
+  );
+};
+
+// =============================================================================
 // Заголовок дашборда
 // =============================================================================
 interface DashboardHeaderProps {
@@ -218,7 +277,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ title, onClose }) => 
 };
 
 // =============================================================================
-// Основной компонент Dashboard (одностраничный, со статистикой внизу)
+// Основной компонент Dashboard
 // =============================================================================
 export const Dashboard: React.FC<DashboardProps> = ({
   open,
@@ -233,7 +292,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const nodeRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 20, y: 20 });
   const [bounds, setBounds] = useState({ left: 0, top: 0, right: 0, bottom: 0 });
-  const [size, setSize] = useState({ width: 550, height: 650 });
+  const [size, setSize] = useState({ width: 550, height: 750 });
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
@@ -263,7 +322,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const deltaY = e.clientY - resizeStartRef.current.y;
     setSize({
       width: Math.max(350, Math.min(900, resizeStartRef.current.width + deltaX)),
-      height: Math.max(400, Math.min(800, resizeStartRef.current.height + deltaY)),
+      height: Math.max(500, Math.min(850, resizeStartRef.current.height + deltaY)),
     });
   }, [isResizing]);
 
@@ -329,12 +388,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         <Typography variant="subtitle1" gutterBottom>Население по годам</Typography>
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={popData}>
+          <BarChart data={popData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="year" />
             <YAxis />
             <RechartsTooltip />
-            <Bar dataKey="population" fill={theme.palette.primary.main} />
+            <Bar dataKey="population" fill={theme.palette.primary.main}>
+              <LabelList dataKey="population" content={renderCustomLabel} />
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
 
@@ -356,7 +417,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     );
   };
 
-  // Рендеринг для региона или выделенной области (статистика внизу)
+  // Рендеринг для региона или выделенной области
   const renderRegionOrSelection = (title: string, locs: Location[], existsInGeoJSON?: boolean) => {
     const stats = calculateExtendedStats(locs, selectedYear, dynamicsPeriod);
     const popData = [
@@ -395,23 +456,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>Население по годам</Typography>
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={popData}>
+          <BarChart data={popData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="year" />
             <YAxis />
             <RechartsTooltip />
-            <Bar dataKey="population" fill={theme.palette.primary.main} />
+            <Bar dataKey="population" fill={theme.palette.primary.main}>
+              <LabelList dataKey="population" content={renderCustomLabel} />
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
 
         <Typography variant="subtitle1" gutterBottom sx={{ mt: 3 }}>Динамика населения (%)</Typography>
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={dynData}>
+          <BarChart data={dynData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="period" />
             <YAxis />
             <RechartsTooltip />
             <Bar dataKey="value">
+              <LabelList dataKey="value" content={renderPercentLabel} />
               {dynData.map((entry, idx) => (
                 <Cell key={`cell-${idx}`} fill={entry.value >= 0 ? '#1a9641' : '#d7191c'} />
               ))}
@@ -421,12 +485,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         <Typography variant="subtitle1" gutterBottom sx={{ mt: 3 }}>Распределение динамики (%)</Typography>
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={stats.histogramData}>
+          <BarChart data={stats.histogramData} margin={{ top: 20, right: 20, left: 20, bottom: 70 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="range" angle={-45} textAnchor="end" height={70} interval={0} fontSize={10} />
             <YAxis />
             <RechartsTooltip />
-            <Bar dataKey="count" fill={theme.palette.info.main} />
+            <Bar dataKey="count" fill={theme.palette.info.main}>
+              <LabelList dataKey="count" content={renderCountLabel} />
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
 
