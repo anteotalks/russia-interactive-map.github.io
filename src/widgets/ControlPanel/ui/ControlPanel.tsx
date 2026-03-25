@@ -20,7 +20,7 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import LandscapeIcon from '@mui/icons-material/Landscape';
 import LayersClearIcon from '@mui/icons-material/LayersClear';
 import SearchIcon from '@mui/icons-material/Search';
-import PublicIcon from "@mui/icons-material/Public";
+import PublicIcon from '@mui/icons-material/Public';
 import { HexColorPicker } from 'react-colorful';
 
 import { PaletteLibrary } from '../../../shared/ui/PaletteLibrary';
@@ -28,9 +28,8 @@ import { GradientPicker } from '../../../shared/ui/GradientPicker';
 import { CameraControls } from '../../../shared/ui/CameraControls';
 import { SliderWithInput } from '../../../shared/ui/SliderWithInput';
 import { SearchPanel } from './SearchPanel';
-import { RegionList } from "../../../shared/ui/RegionList";
+import { RegionList } from '../../../shared/ui/RegionList';
 import { PaletteName } from '../../../entities/palette/lib/constants';
-import { invertPalette } from '../../../shared/lib/color/utils';
 import { GradientConfig } from '../../../entities/palette/lib/types';
 import { CameraSettings } from '../../../shared/types/camera';
 import { LayerConfig } from '../../../shared/lib/hooks/useMapLayersControl';
@@ -95,12 +94,12 @@ interface ControlPanelProps {
   terrainMode: TerrainMode;
   onTerrainModeChange: (mode: TerrainMode) => void;
   locations: Location[] | null;
+  onCenterLocation?: (location: Location) => void;
   regionsList: string[];
   selectedRegions: Set<string>;
   onRegionsSelectionChange: (regions: Set<string>) => void;
   onCenterRegion: (region: string) => void;
   onCenterSelectedRegions: () => void;
-  onCenterLocation?: (location: Location) => void;
 }
 
 const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
@@ -115,7 +114,8 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
     populationMin, populationMax, dynamicsMin, dynamicsMax,
     regionConfig, onRegionConfigChange,
     terrainMode, onTerrainModeChange,
-    locations, onCenterLocation
+    locations, onCenterLocation,
+    regionsList, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions
   } = props;
 
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -414,12 +414,17 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
           {activeTab === 6 && (
             <Stack spacing={2}>
               <RegionList
-                regions={props.regionsList}
-                selectedRegions={props.selectedRegions}
-                onSelectionChange={props.onRegionsSelectionChange}
-                onCenterRegion={props.onCenterRegion}
-                onCenterSelected={props.onCenterSelectedRegions}
+                regions={regionsList}
+                selectedRegions={selectedRegions}
+                onSelectionChange={onRegionsSelectionChange}
+                onCenterRegion={onCenterRegion}
+                onCenterSelected={onCenterSelectedRegions}
               />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                {selectedRegions.size === 0 
+                  ? "⚠️ Не выбрано ни одного региона - населенные пункты не отображаются"
+                  : `✅ Выбрано регионов: ${selectedRegions.size} (показываются только точки из этих регионов)`}
+              </Typography>
             </Stack>
           )}
         </Paper>

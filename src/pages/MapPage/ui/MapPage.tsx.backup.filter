@@ -280,20 +280,12 @@ export const MapPage: React.FC = () => {
     console.log('Draw mode changed:', mode);
   }, []);
 
-  // Список всех регионов для панели
+  const stableLocations = useMemo(() => locations, [locations]);
+  
   const regionsList = useMemo(() => {
     if (!locations) return [];
     return [...new Set(locations.map(l => l.region))].sort();
   }, [locations]);
-
-  // ФИЛЬТРУЕМ ЛОКАЦИИ ПО ВЫБРАННЫМ РЕГИОНАМ
-  const filteredLocations = useMemo(() => {
-    if (!locations) return null;
-    // Если не выбрано ни одного региона - не показываем ничего
-    if (selectedRegions.size === 0) return null;
-    // Показываем только точки из выбранных регионов
-    return locations.filter(loc => selectedRegions.has(loc.region));
-  }, [locations, selectedRegions]);
 
   const layerSettings = useMemo(() => ({
     selectedYear: settings.selectedYear,
@@ -314,8 +306,7 @@ export const MapPage: React.FC = () => {
     showZeroPopulation: filterSettings.showZeroPopulation,
   }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings]);
 
-  // Используем filteredLocations вместо locations
-  const deckLayers = useMapLayers(filteredLocations, layerSettings, palette);
+  const deckLayers = useMapLayers(stableLocations, layerSettings, palette);
   const regionLayer = useRegionLayer(regionsData, regionConfig);
 
   const allLayers = useMemo(() => {

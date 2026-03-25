@@ -87,6 +87,9 @@ export const RegionList: React.FC<RegionListProps> = ({
           Все
         </Button>
         <Button size="small" variant="outlined" onClick={handleDeselectAll} fullWidth>
+        <Button size="small" variant="outlined" onClick={() => onSelectionChange(new Set())} fullWidth>
+          Сбросить
+        </Button>
           Ни одного
         </Button>
         {selectedRegions.size > 0 && (
