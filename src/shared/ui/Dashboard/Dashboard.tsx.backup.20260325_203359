@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Draggable, { DraggableData, DraggableEvent } from 'react-draggable';
 import {
   Paper,
@@ -230,7 +230,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
-  // Все хуки вызываются безусловно
+  if (!open || !data) return null;
+
+  // Обновление границ при изменении размера окна
+  useEffect(() => {
+    const updateBounds = () => {
+      if (nodeRef.current) {
+        const { clientWidth, clientHeight } = document.documentElement;
+        const nodeWidth = nodeRef.current.offsetWidth;
+        const nodeHeight = nodeRef.current.offsetHeight;
+        setBounds({
+          left: 0,
+          top: 0,
+          right: clientWidth - nodeWidth,
+          bottom: clientHeight - nodeHeight,
+        });
+      }
+    };
+    updateBounds();
+    window.addEventListener('resize', updateBounds);
+    return () => window.removeEventListener('resize', updateBounds);
+  }, []);
+
   const handleDrag = useCallback((_e: DraggableEvent, data: DraggableData) => {
     setPosition({ x: data.x, y: data.y });
   }, []);
@@ -239,6 +260,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setPosition({ x: data.x, y: data.y });
   }, []);
 
+  // Обработчики изменения размера (resize)
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -265,35 +287,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setIsResizing(false);
   }, []);
 
-  // Функция обновления границ (должна вызываться после рендера)
-  const updateBounds = useCallback(() => {
-    if (nodeRef.current) {
-      const { clientWidth, clientHeight } = document.documentElement;
-      const nodeWidth = nodeRef.current.offsetWidth;
-      const nodeHeight = nodeRef.current.offsetHeight;
-      setBounds({
-        left: 0,
-        top: 0,
-        right: clientWidth - nodeWidth,
-        bottom: clientHeight - nodeHeight,
-      });
-    }
-  }, []);
-
-  // Эффект для отслеживания изменения размеров окна
-  useEffect(() => {
-    window.addEventListener('resize', updateBounds);
-    return () => window.removeEventListener('resize', updateBounds);
-  }, [updateBounds]);
-
-  // Эффект для обновления границ при открытии дашборда и изменении размера
-  useLayoutEffect(() => {
-    if (open && nodeRef.current) {
-      updateBounds();
-    }
-  }, [open, updateBounds, size]); // пересчитываем при изменении размера или открытии
-
-  // Эффект для управления ресайзом
   useEffect(() => {
     if (isResizing) {
       window.addEventListener('mousemove', onResize);
@@ -304,9 +297,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       };
     }
   }, [isResizing, onResize, stopResize]);
-
-  // Ранний возврат, если дашборд не открыт – после всех хуков
-  if (!open || !data) return null;
 
   // Рендеринг для точки
   const renderPoint = (d: PointDashboardData) => {
@@ -468,7 +458,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         ref={nodeRef}
         style={{
           position: 'absolute',
-          zIndex: 1400, // выше, чем у панели управления (1300)
+          zIndex: 1300,
           width: size.width,
           height: size.height,
         }}

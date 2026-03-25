@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Draggable, { DraggableData, DraggableEvent } from 'react-draggable';
 import {
   Paper,
@@ -13,7 +13,6 @@ import {
   Card,
   CardContent,
   useTheme,
-  Tooltip,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
@@ -26,7 +25,6 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
   Cell,
-  Legend,
 } from 'recharts';
 import { Location } from '../../../entities/location/lib/types';
 
@@ -60,9 +58,7 @@ interface DashboardProps {
   absolutePeriod: '2002-2010' | '2010-2021' | '2002-2021';
 }
 
-// =============================================================================
 // Расширенная статистика (аналог старого region_stats)
-// =============================================================================
 interface ExtendedStats {
   count: number;
   pop2002: number;
@@ -101,17 +97,14 @@ const calculateExtendedStats = (
     };
   }
 
-  // Суммы
   const pop2002 = locations.reduce((s, l) => s + l.population_2002, 0);
   const pop2010 = locations.reduce((s, l) => s + l.population_2010, 0);
   const pop2021 = locations.reduce((s, l) => s + l.population_2021, 0);
 
-  // Средние
   const mean2002 = pop2002 / count;
   const mean2010 = pop2010 / count;
   const mean2021 = pop2021 / count;
 
-  // Медианы
   const sorted2002 = [...locations].sort((a, b) => a.population_2002 - b.population_2002);
   const median2002 = sorted2002[Math.floor(count / 2)].population_2002;
   const sorted2010 = [...locations].sort((a, b) => a.population_2010 - b.population_2010);
@@ -119,12 +112,10 @@ const calculateExtendedStats = (
   const sorted2021 = [...locations].sort((a, b) => a.population_2021 - b.population_2021);
   const median2021 = sorted2021[Math.floor(count / 2)].population_2021;
 
-  // Динамика общая
   const dyn2002_2010 = pop2002 > 0 ? ((pop2010 - pop2002) / pop2002) * 100 : 0;
   const dyn2010_2021 = pop2010 > 0 ? ((pop2021 - pop2010) / pop2010) * 100 : 0;
   const dyn2002_2021 = pop2002 > 0 ? ((pop2021 - pop2002) / pop2002) * 100 : 0;
 
-  // Динамика отдельных точек для гистограммы
   const dynamicsValues = locations.map(l => {
     const p2002 = l.population_2002;
     const p2010 = l.population_2010;
@@ -139,7 +130,6 @@ const calculateExtendedStats = (
   const maxDynamics = Math.max(...dynamicsValues);
   const avgDynamics = dynamicsValues.reduce((a, b) => a + b, 0) / dynamicsValues.length;
 
-  // Гистограмма распределения динамики (10 бинов)
   const binCount = 10;
   const min = Math.min(...dynamicsValues, -0.01);
   const max = Math.max(...dynamicsValues, 0.01);
@@ -176,15 +166,7 @@ const calculateExtendedStats = (
   };
 };
 
-// =============================================================================
-// Вспомогательная функция для рендеринга заголовка дашборда с перетаскиванием
-// =============================================================================
-interface DashboardHeaderProps {
-  title: string;
-  onClose: () => void;
-}
-
-const DashboardHeader: React.FC<DashboardHeaderProps> = ({ title, onClose }) => {
+const DashboardHeader: React.FC<{ title: string; onClose: () => void }> = ({ title, onClose }) => {
   return (
     <Box
       className="drag-handle"
@@ -209,9 +191,6 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ title, onClose }) => 
   );
 };
 
-// =============================================================================
-// Основной компонент Dashboard
-// =============================================================================
 export const Dashboard: React.FC<DashboardProps> = ({
   open,
   data,
@@ -230,7 +209,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
-  // Все хуки вызываются безусловно
+  // Хуки для перетаскивания
   const handleDrag = useCallback((_e: DraggableEvent, data: DraggableData) => {
     setPosition({ x: data.x, y: data.y });
   }, []);
@@ -239,6 +218,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setPosition({ x: data.x, y: data.y });
   }, []);
 
+  // Хуки для изменения размера
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -265,35 +245,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setIsResizing(false);
   }, []);
 
-  // Функция обновления границ (должна вызываться после рендера)
-  const updateBounds = useCallback(() => {
-    if (nodeRef.current) {
-      const { clientWidth, clientHeight } = document.documentElement;
-      const nodeWidth = nodeRef.current.offsetWidth;
-      const nodeHeight = nodeRef.current.offsetHeight;
-      setBounds({
-        left: 0,
-        top: 0,
-        right: clientWidth - nodeWidth,
-        bottom: clientHeight - nodeHeight,
-      });
-    }
-  }, []);
-
-  // Эффект для отслеживания изменения размеров окна
-  useEffect(() => {
-    window.addEventListener('resize', updateBounds);
-    return () => window.removeEventListener('resize', updateBounds);
-  }, [updateBounds]);
-
-  // Эффект для обновления границ при открытии дашборда и изменении размера
-  useLayoutEffect(() => {
-    if (open && nodeRef.current) {
-      updateBounds();
-    }
-  }, [open, updateBounds, size]); // пересчитываем при изменении размера или открытии
-
-  // Эффект для управления ресайзом
   useEffect(() => {
     if (isResizing) {
       window.addEventListener('mousemove', onResize);
@@ -305,10 +256,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [isResizing, onResize, stopResize]);
 
-  // Ранний возврат, если дашборд не открыт – после всех хуков
+  // Обновление границ при изменении размера окна
+  useEffect(() => {
+    const updateBounds = () => {
+      if (nodeRef.current) {
+        const { clientWidth, clientHeight } = document.documentElement;
+        const nodeWidth = nodeRef.current.offsetWidth;
+        const nodeHeight = nodeRef.current.offsetHeight;
+        setBounds({
+          left: 0,
+          top: 0,
+          right: clientWidth - nodeWidth,
+          bottom: clientHeight - nodeHeight,
+        });
+      }
+    };
+    updateBounds();
+    window.addEventListener('resize', updateBounds);
+    return () => window.removeEventListener('resize', updateBounds);
+  }, []);
+
+  // Если дашборд закрыт, не рендерим
   if (!open || !data) return null;
 
-  // Рендеринг для точки
   const renderPoint = (d: PointDashboardData) => {
     const loc = d.location;
     const popData = [
@@ -334,7 +304,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     );
   };
 
-  // Рендеринг для региона или выделенной области
   const renderRegionOrSelection = (title: string, locs: Location[]) => {
     const stats = calculateExtendedStats(locs, selectedYear, dynamicsPeriod);
     const popData = [
@@ -342,7 +311,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       { year: '2010', population: stats.pop2010 },
       { year: '2021', population: stats.pop2021 },
     ];
-    // Данные для графика динамики в процентах
     const dynData = [
       { period: '2002→2010', value: stats.dyn2002_2010 },
       { period: '2010→2021', value: stats.dyn2010_2021 },
@@ -449,7 +417,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     );
   };
 
-  // Определяем заголовок
   let title = '';
   if (data.type === 'point') title = 'Населённый пункт';
   else if (data.type === 'region') title = data.regionName;
@@ -468,7 +435,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         ref={nodeRef}
         style={{
           position: 'absolute',
-          zIndex: 1400, // выше, чем у панели управления (1300)
+          zIndex: 1300,
           width: size.width,
           height: size.height,
         }}
@@ -491,7 +458,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {data.type === 'region' && renderRegionOrSelection(data.regionName, data.locations)}
             {data.type === 'selection' && renderRegionOrSelection('Выделенная область', data.locations)}
           </Box>
-          {/* Ресайзер */}
           <Box
             onMouseDown={startResize}
             sx={{

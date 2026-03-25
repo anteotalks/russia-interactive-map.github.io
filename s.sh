@@ -1,246 +1,569 @@
 #!/bin/bash
 
-# ПОСЛЕДНИЙ ШАНС - ДОБАВЛЯЕМ ГЛОБАЛЬНЫЙ ФИКС
+# =============================================================================
+# Исправление перетаскивания Dashboard: корректные bounds при открытии
+# =============================================================================
 
 set -e
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${YELLOW}ДОБАВЛЯЕМ ГЛОБАЛЬНЫЙ ФИКС ДЛЯ СТИЛЕЙ...${NC}"
+DASHBOARD_DIR="src/shared/ui/Dashboard"
+DASHBOARD_FILE="$DASHBOARD_DIR/Dashboard.tsx"
+INDEX_FILE="$DASHBOARD_DIR/index.ts"
+BACKUP_SUFFIX=".backup.$(date +%Y%m%d_%H%M%S)"
 
-# ============================================================
-# 1. ПРАВИМ MapWidget.tsx - ДОБАВЛЯЕМ ОБРАБОТЧИК ОШИБОК СТИЛЕЙ
-# ============================================================
-cat > src/widgets/Map/ui/MapWidget.tsx << 'EOF'
-/**
- * MapWidget - ИСПРАВЛЕННАЯ ВЕРСИЯ
- * Добавлен перехват ошибок стилей
- */
+if [ ! -d "$DASHBOARD_DIR" ]; then
+    echo -e "${RED}❌ Ошибка: директория $DASHBOARD_DIR не найдена!${NC}"
+    exit 1
+fi
 
-import React, { forwardRef, useEffect, useRef, useCallback, useState } from 'react';
-import Map, { MapRef, useControl, NavigationControl } from 'react-map-gl/maplibre';
-import { MapboxOverlay } from '@deck.gl/mapbox';
-import type { MapboxOverlayProps } from '@deck.gl/mapbox';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Layer, PickingInfo } from '@deck.gl/core';
-import type { LayerConfig } from '../../../shared/types/map';
-import { buildMapStyle } from '../../../shared/lib/map/buildMapStyle';
-import { TerrainDem } from '../lib/TerrainDem';
-import { HillshadeDem } from '../lib/HillshadeDem';
+# Создаём резервную копию
+if [ -f "$DASHBOARD_FILE" ]; then
+    echo -e "${YELLOW}📦 Создаю резервную копию $DASHBOARD_FILE -> ${DASHBOARD_FILE}${BACKUP_SUFFIX}${NC}"
+    cp "$DASHBOARD_FILE" "${DASHBOARD_FILE}${BACKUP_SUFFIX}"
+fi
 
-export type TerrainMode = 'none' | 'hillshade' | '3d';
+# =============================================================================
+# Генерируем новый Dashboard.tsx с исправленным перетаскиванием
+# =============================================================================
+cat > "$DASHBOARD_FILE" << 'EOF'
+import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
+import Draggable, { DraggableData, DraggableEvent } from 'react-draggable';
+import {
+  Paper,
+  Typography,
+  Box,
+  IconButton,
+  Divider,
+  Chip,
+  Tabs,
+  Tab,
+  Grid,
+  Card,
+  CardContent,
+  useTheme,
+  Tooltip,
+} from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  Cell,
+  Legend,
+} from 'recharts';
+import { Location } from '../../../entities/location/lib/types';
 
-interface MapWidgetProps {
-  layers: Layer[];
-  getTooltip?: (info: PickingInfo) => any;
-  onClick?: (info: PickingInfo) => void;
-  viewState?: {
-    longitude: number;
-    latitude: number;
-    zoom: number;
-    pitch?: number;
-    bearing?: number;
-  };
-  initialViewState?: {
-    longitude: number;
-    latitude: number;
-    zoom: number;
-    pitch?: number;
-    bearing?: number;
-  };
-  baseLayer: LayerConfig;
-  terrainMode: TerrainMode;
-  onViewStateChange?: (viewState: any) => void;
-  children?: React.ReactNode;
+export type DashboardType = 'point' | 'region' | 'selection';
+
+export interface PointDashboardData {
+  type: 'point';
+  location: Location;
 }
 
-function DeckGLOverlay(props: MapboxOverlayProps & { interleaved?: boolean }) {
-  const overlay = useControl<MapboxOverlay>(
-    () => new MapboxOverlay({ ...props, interleaved: true }),
-  );
-  overlay.setProps(props);
-  return null;
+export interface RegionDashboardData {
+  type: 'region';
+  regionName: string;
+  locations: Location[];
 }
 
-function throttle<T extends (...args: any[]) => any>(func: T, limit: number): T {
-  let inThrottle: boolean;
-  return ((...args: any[]) => {
-    if (!inThrottle) {
-      func(...args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  }) as T;
+export interface SelectionDashboardData {
+  type: 'selection';
+  locations: Location[];
 }
 
-export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
-  layers,
-  getTooltip,
-  onClick,
-  viewState,
-  initialViewState,
-  baseLayer,
-  terrainMode,
-  onViewStateChange,
-  children,
-}, ref) => {
-  const mapStyle = React.useMemo(() => buildMapStyle(baseLayer), [baseLayer]);
-  const terrainProps = terrainMode === '3d' ? { source: 'terrain-dem', exaggeration: 1.5 } : undefined;
-  
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRefLocal = useRef<MapRef | null>(null);
-  
-  const [mapError, setMapError] = useState<string | null>(null);
+export type DashboardData = PointDashboardData | RegionDashboardData | SelectionDashboardData;
 
-  const handleResize = useCallback(() => {
-    if (mapRefLocal.current) {
-      mapRefLocal.current.resize();
-    }
-  }, []);
+interface DashboardProps {
+  open: boolean;
+  data: DashboardData | null;
+  onClose: () => void;
+  selectedYear: '2002' | '2010' | '2021';
+  dynamicsPeriod: '2010-2021' | '2002-2021';
+  mode: 'dynamics' | 'absolute';
+  absolutePeriod: '2002-2010' | '2010-2021' | '2002-2021';
+}
 
-  const throttledResize = useCallback(throttle(handleResize, 100), [handleResize]);
+// =============================================================================
+// Расширенная статистика (аналог старого region_stats)
+// =============================================================================
+interface ExtendedStats {
+  count: number;
+  pop2002: number;
+  pop2010: number;
+  pop2021: number;
+  mean2002: number;
+  mean2010: number;
+  mean2021: number;
+  median2002: number;
+  median2010: number;
+  median2021: number;
+  dyn2002_2010: number;
+  dyn2010_2021: number;
+  dyn2002_2021: number;
+  minDynamics: number;
+  maxDynamics: number;
+  avgDynamics: number;
+  histogramData: { range: string; count: number }[];
+}
 
-  useEffect(() => {
-    window.addEventListener('resize', throttledResize);
-    return () => window.removeEventListener('resize', throttledResize);
-  }, [throttledResize]);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver(() => throttledResize());
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, [throttledResize]);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(handleResize, 100);
-    return () => clearTimeout(timeoutId);
-  }, [handleResize]);
-
-  // ГЛОБАЛЬНЫЙ ПЕРЕХВАТ ОШИБОК СТИЛЕЙ
-  useEffect(() => {
-    const originalError = console.error;
-    console.error = (...args) => {
-      // Игнорируем конкретную ошибку line-dasharray
-      if (args[0]?.includes?.('line-dasharray') || args[0]?.includes?.('literal array')) {
-        console.log('🟡 Игнорируем ошибку стилей draw');
-        return;
-      }
-      originalError.apply(console, args);
+const calculateExtendedStats = (
+  locations: Location[],
+  selectedYear: '2002' | '2010' | '2021',
+  dynamicsPeriod: '2010-2021' | '2002-2021'
+): ExtendedStats => {
+  const count = locations.length;
+  if (count === 0) {
+    return {
+      count: 0,
+      pop2002: 0, pop2010: 0, pop2021: 0,
+      mean2002: 0, mean2010: 0, mean2021: 0,
+      median2002: 0, median2010: 0, median2021: 0,
+      dyn2002_2010: 0, dyn2010_2021: 0, dyn2002_2021: 0,
+      minDynamics: 0, maxDynamics: 0, avgDynamics: 0,
+      histogramData: [],
     };
+  }
 
-    return () => {
-      console.error = originalError;
-    };
-  }, []);
+  // Суммы
+  const pop2002 = locations.reduce((s, l) => s + l.population_2002, 0);
+  const pop2010 = locations.reduce((s, l) => s + l.population_2010, 0);
+  const pop2021 = locations.reduce((s, l) => s + l.population_2021, 0);
 
+  // Средние
+  const mean2002 = pop2002 / count;
+  const mean2010 = pop2010 / count;
+  const mean2021 = pop2021 / count;
+
+  // Медианы
+  const sorted2002 = [...locations].sort((a, b) => a.population_2002 - b.population_2002);
+  const median2002 = sorted2002[Math.floor(count / 2)].population_2002;
+  const sorted2010 = [...locations].sort((a, b) => a.population_2010 - b.population_2010);
+  const median2010 = sorted2010[Math.floor(count / 2)].population_2010;
+  const sorted2021 = [...locations].sort((a, b) => a.population_2021 - b.population_2021);
+  const median2021 = sorted2021[Math.floor(count / 2)].population_2021;
+
+  // Динамика общая
+  const dyn2002_2010 = pop2002 > 0 ? ((pop2010 - pop2002) / pop2002) * 100 : 0;
+  const dyn2010_2021 = pop2010 > 0 ? ((pop2021 - pop2010) / pop2010) * 100 : 0;
+  const dyn2002_2021 = pop2002 > 0 ? ((pop2021 - pop2002) / pop2002) * 100 : 0;
+
+  // Динамика отдельных точек для гистограммы
+  const dynamicsValues = locations.map(l => {
+    const p2002 = l.population_2002;
+    const p2010 = l.population_2010;
+    const p2021 = l.population_2021;
+    if (selectedYear === '2002') return 0;
+    if (selectedYear === '2010') return p2002 > 0 ? ((p2010 - p2002) / p2002) * 100 : 0;
+    if (dynamicsPeriod === '2010-2021') return p2010 > 0 ? ((p2021 - p2010) / p2010) * 100 : 0;
+    return p2002 > 0 ? ((p2021 - p2002) / p2002) * 100 : 0;
+  });
+
+  const minDynamics = Math.min(...dynamicsValues);
+  const maxDynamics = Math.max(...dynamicsValues);
+  const avgDynamics = dynamicsValues.reduce((a, b) => a + b, 0) / dynamicsValues.length;
+
+  // Гистограмма распределения динамики (10 бинов)
+  const binCount = 10;
+  const min = Math.min(...dynamicsValues, -0.01);
+  const max = Math.max(...dynamicsValues, 0.01);
+  const step = (max - min) / binCount;
+  const bins = Array(binCount).fill(0);
+  dynamicsValues.forEach(v => {
+    const idx = Math.floor((v - min) / step);
+    if (idx >= 0 && idx < binCount) bins[idx] += 1;
+    else if (v >= max) bins[binCount - 1] += 1;
+  });
+  const histogramData = bins.map((c, i) => ({
+    range: `${(min + i * step).toFixed(1)}–${(min + (i + 1) * step).toFixed(1)}`,
+    count: c,
+  }));
+
+  return {
+    count,
+    pop2002,
+    pop2010,
+    pop2021,
+    mean2002,
+    mean2010,
+    mean2021,
+    median2002,
+    median2010,
+    median2021,
+    dyn2002_2010,
+    dyn2010_2021,
+    dyn2002_2021,
+    minDynamics,
+    maxDynamics,
+    avgDynamics,
+    histogramData,
+  };
+};
+
+// =============================================================================
+// Вспомогательная функция для рендеринга заголовка дашборда с перетаскиванием
+// =============================================================================
+interface DashboardHeaderProps {
+  title: string;
+  onClose: () => void;
+}
+
+const DashboardHeader: React.FC<DashboardHeaderProps> = ({ title, onClose }) => {
   return (
-    <div
-      ref={containerRef}
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden'
+    <Box
+      className="drag-handle"
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        mb: 2,
+        cursor: 'move',
+        borderBottom: '1px solid #e0e0e0',
+        pb: 1,
       }}
     >
-      <Map
-        ref={(node) => {
-          mapRefLocal.current = node;
-          if (typeof ref === 'function') ref(node);
-          else if (ref) ref.current = node;
-        }}
-        mapStyle={mapStyle}
-        {...(viewState ? viewState : {})}
-        initialViewState={!viewState ? initialViewState : undefined}
-        onMove={onViewStateChange ? (evt) => onViewStateChange(evt.viewState) : undefined}
-        maxPitch={85}
-        attributionControl={false}
-        maxTileCacheSize={200}
-        maxTileCacheZoomLevels={8}
-        validateStyle={process.env.NODE_ENV === "production" ? false : undefined}
-        onLoad={() => {
-          console.log('✅ MapLibre карта загружена');
-          setMapError(null);
-          handleResize();
-        }}
-        onError={(e) => {
-          // Игнорируем ошибку line-dasharray
-          if (e.error?.message?.includes?.('line-dasharray') || 
-              e.error?.message?.includes?.('literal array')) {
-            console.log('🟡 Игнорируем ошибку draw styles');
-            return;
-          }
-          console.error('❌ Ошибка MapLibre:', e.error?.message || e);
-          setMapError(e.error?.message || 'Ошибка загрузки карты');
-        }}
-        style={{ width: '100%', height: '100%' }}
-        terrain={terrainProps}
-      >
-        <TerrainDem />
-        {terrainMode === 'hillshade' && <HillshadeDem />}
-        <NavigationControl position="top-right" />
-        <DeckGLOverlay
-          layers={layers}
-          getTooltip={getTooltip}
-          onClick={onClick}
-          interleaved
-        />
-        {children}
-      </Map>
-      
-      {mapError && (
-        <div style={{
-          position: 'absolute',
-          bottom: 20,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          backgroundColor: 'rgba(211, 47, 47, 0.9)',
-          color: 'white',
-          padding: '8px 16px',
-          borderRadius: '4px',
-          zIndex: 2000,
-          fontSize: '14px'
-        }}>
-          Ошибка карты: {mapError}
-        </div>
-      )}
-    </div>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <DragIndicatorIcon fontSize="small" color="action" />
+        <Typography variant="h6">{title}</Typography>
+      </Box>
+      <IconButton size="small" onClick={onClose} title="Закрыть">
+        <CloseIcon fontSize="small" />
+      </IconButton>
+    </Box>
   );
-});
+};
 
-MapWidget.displayName = 'MapWidget';
-export default MapWidget;
+// =============================================================================
+// Основной компонент Dashboard
+// =============================================================================
+export const Dashboard: React.FC<DashboardProps> = ({
+  open,
+  data,
+  onClose,
+  selectedYear,
+  dynamicsPeriod,
+  mode,
+  absolutePeriod,
+}) => {
+  const theme = useTheme();
+  const [tabIndex, setTabIndex] = useState(0);
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x: 20, y: 20 });
+  const [bounds, setBounds] = useState({ left: 0, top: 0, right: 0, bottom: 0 });
+  const [size, setSize] = useState({ width: 500, height: 500 });
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+
+  // Все хуки вызываются безусловно
+  const handleDrag = useCallback((_e: DraggableEvent, data: DraggableData) => {
+    setPosition({ x: data.x, y: data.y });
+  }, []);
+
+  const handleStop = useCallback((_e: DraggableEvent, data: DraggableData) => {
+    setPosition({ x: data.x, y: data.y });
+  }, []);
+
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    resizeStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: size.width,
+      height: size.height,
+    };
+  }, [size]);
+
+  const onResize = useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+    const deltaX = e.clientX - resizeStartRef.current.x;
+    const deltaY = e.clientY - resizeStartRef.current.y;
+    setSize({
+      width: Math.max(300, resizeStartRef.current.width + deltaX),
+      height: Math.max(200, resizeStartRef.current.height + deltaY),
+    });
+  }, [isResizing]);
+
+  const stopResize = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  // Функция обновления границ (должна вызываться после рендера)
+  const updateBounds = useCallback(() => {
+    if (nodeRef.current) {
+      const { clientWidth, clientHeight } = document.documentElement;
+      const nodeWidth = nodeRef.current.offsetWidth;
+      const nodeHeight = nodeRef.current.offsetHeight;
+      setBounds({
+        left: 0,
+        top: 0,
+        right: clientWidth - nodeWidth,
+        bottom: clientHeight - nodeHeight,
+      });
+    }
+  }, []);
+
+  // Эффект для отслеживания изменения размеров окна
+  useEffect(() => {
+    window.addEventListener('resize', updateBounds);
+    return () => window.removeEventListener('resize', updateBounds);
+  }, [updateBounds]);
+
+  // Эффект для обновления границ при открытии дашборда и изменении размера
+  useLayoutEffect(() => {
+    if (open && nodeRef.current) {
+      updateBounds();
+    }
+  }, [open, updateBounds, size]); // пересчитываем при изменении размера или открытии
+
+  // Эффект для управления ресайзом
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener('mousemove', onResize);
+      window.addEventListener('mouseup', stopResize);
+      return () => {
+        window.removeEventListener('mousemove', onResize);
+        window.removeEventListener('mouseup', stopResize);
+      };
+    }
+  }, [isResizing, onResize, stopResize]);
+
+  // Ранний возврат, если дашборд не открыт – после всех хуков
+  if (!open || !data) return null;
+
+  // Рендеринг для точки
+  const renderPoint = (d: PointDashboardData) => {
+    const loc = d.location;
+    const popData = [
+      { year: '2002', population: loc.population_2002 },
+      { year: '2010', population: loc.population_2010 },
+      { year: '2021', population: loc.population_2021 },
+    ];
+    return (
+      <>
+        <Typography variant="h5" gutterBottom>{loc.populated_place}</Typography>
+        <Chip label={loc.region} size="small" sx={{ mb: 3 }} />
+        <Typography variant="subtitle1" gutterBottom>Население по годам</Typography>
+        <ResponsiveContainer width="100%" height={250}>
+          <BarChart data={popData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="year" />
+            <YAxis />
+            <RechartsTooltip />
+            <Bar dataKey="population" fill={theme.palette.primary.main} />
+          </BarChart>
+        </ResponsiveContainer>
+      </>
+    );
+  };
+
+  // Рендеринг для региона или выделенной области
+  const renderRegionOrSelection = (title: string, locs: Location[]) => {
+    const stats = calculateExtendedStats(locs, selectedYear, dynamicsPeriod);
+    const popData = [
+      { year: '2002', population: stats.pop2002 },
+      { year: '2010', population: stats.pop2010 },
+      { year: '2021', population: stats.pop2021 },
+    ];
+    // Данные для графика динамики в процентах
+    const dynData = [
+      { period: '2002→2010', value: stats.dyn2002_2010 },
+      { period: '2010→2021', value: stats.dyn2010_2021 },
+      { period: '2002→2021', value: stats.dyn2002_2021 },
+    ];
+
+    return (
+      <>
+        <Typography variant="h5" gutterBottom>{title}</Typography>
+        <Typography variant="body2" color="text.secondary" gutterBottom>
+          Населенных пунктов: {stats.count}
+        </Typography>
+
+        <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} sx={{ mb: 2 }}>
+          <Tab label="Население" />
+          <Tab label="Динамика (%)" />
+          <Tab label="Статистика" />
+          <Tab label="Распределение" />
+        </Tabs>
+
+        {tabIndex === 0 && (
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={popData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="year" />
+              <YAxis />
+              <RechartsTooltip />
+              <Bar dataKey="population" fill={theme.palette.primary.main} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+
+        {tabIndex === 1 && (
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={dynData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="period" />
+              <YAxis />
+              <RechartsTooltip />
+              <Bar dataKey="value" fill={theme.palette.secondary.main}>
+                {dynData.map((entry, idx) => (
+                  <Cell
+                    key={`cell-${idx}`}
+                    fill={entry.value >= 0 ? theme.palette.success.main : theme.palette.error.main}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+
+        {tabIndex === 2 && (
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="subtitle2">Среднее население</Typography>
+                  <Typography>2002: {stats.mean2002.toFixed(0)}</Typography>
+                  <Typography>2010: {stats.mean2010.toFixed(0)}</Typography>
+                  <Typography>2021: {stats.mean2021.toFixed(0)}</Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={6}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="subtitle2">Медиана населения</Typography>
+                  <Typography>2002: {stats.median2002.toLocaleString()}</Typography>
+                  <Typography>2010: {stats.median2010.toLocaleString()}</Typography>
+                  <Typography>2021: {stats.median2021.toLocaleString()}</Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="subtitle2">Динамика (общая)</Typography>
+                  <Typography>2002→2010: {stats.dyn2002_2010.toFixed(1)}%</Typography>
+                  <Typography>2010→2021: {stats.dyn2010_2021.toFixed(1)}%</Typography>
+                  <Typography>2002→2021: {stats.dyn2002_2021.toFixed(1)}%</Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        )}
+
+        {tabIndex === 3 && (
+          <>
+            <Typography variant="subtitle2" gutterBottom>
+              Мин: {stats.minDynamics.toFixed(1)}% | Макс: {stats.maxDynamics.toFixed(1)}% | Среднее: {stats.avgDynamics.toFixed(1)}%
+            </Typography>
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={stats.histogramData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="range" angle={-45} textAnchor="end" height={70} interval={0} />
+                <YAxis />
+                <RechartsTooltip />
+                <Bar dataKey="count" fill={theme.palette.info.main} />
+              </BarChart>
+            </ResponsiveContainer>
+          </>
+        )}
+      </>
+    );
+  };
+
+  // Определяем заголовок
+  let title = '';
+  if (data.type === 'point') title = 'Населённый пункт';
+  else if (data.type === 'region') title = data.regionName;
+  else title = 'Выделенная область';
+
+  return (
+    <Draggable
+      nodeRef={nodeRef}
+      handle=".drag-handle"
+      bounds={bounds}
+      position={position}
+      onDrag={handleDrag}
+      onStop={handleStop}
+    >
+      <div
+        ref={nodeRef}
+        style={{
+          position: 'absolute',
+          zIndex: 1400, // выше, чем у панели управления (1300)
+          width: size.width,
+          height: size.height,
+        }}
+      >
+        <Paper
+          sx={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            backgroundColor: 'rgba(255,255,255,0.98)',
+            borderRadius: 2,
+            boxShadow: 3,
+          }}
+        >
+          <DashboardHeader title={title} onClose={onClose} />
+          <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+            {data.type === 'point' && renderPoint(data)}
+            {data.type === 'region' && renderRegionOrSelection(data.regionName, data.locations)}
+            {data.type === 'selection' && renderRegionOrSelection('Выделенная область', data.locations)}
+          </Box>
+          {/* Ресайзер */}
+          <Box
+            onMouseDown={startResize}
+            sx={{
+              position: 'absolute',
+              bottom: 0,
+              right: 0,
+              width: 15,
+              height: 15,
+              cursor: 'se-resize',
+              background: 'linear-gradient(135deg, transparent 50%, #ccc 50%)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, transparent 50%, #888 50%)',
+              },
+            }}
+          />
+        </Paper>
+      </div>
+    </Draggable>
+  );
+};
+
+export default Dashboard;
 EOF
 
-echo -e "${GREEN}✓ MapWidget.tsx обновлен - добавлен перехват ошибок${NC}"
+# =============================================================================
+# Обновляем index.ts (экспорты)
+# =============================================================================
+cat > "$INDEX_FILE" << 'EOF'
+export { default } from './Dashboard';
+export type { DashboardData, DashboardType, PointDashboardData, RegionDashboardData, SelectionDashboardData } from './Dashboard';
+EOF
 
-# ============================================================
-# 2. ПРОВЕРЯЕМ ЧТО ВСЕ КАСТОМНЫЕ СТИЛИ УДАЛЕНЫ
-# ============================================================
-rm -f src/features/draw/drawStyles.ts
-rm -f src/features/draw/drawStyles.*
-rm -f src/features/lasso/lib/drawStyles.ts
-
-echo -e "${GREEN}✓ Все кастомные стили удалены${NC}"
-
-# ============================================================
-# 3. ОЧИЩАЕМ КЭШ
-# ============================================================
-rm -rf node_modules/.cache
-rm -rf .rsbuild
-
-echo -e "${YELLOW}========================================${NC}"
-echo -e "${GREEN}ГОТОВО! ТЕПЕРЬ ОШИБКА БУДЕТ ПРОСТО ИГНОРИРОВАТЬСЯ${NC}"
-echo -e "${YELLOW}========================================${NC}"
-echo -e "\n${GREEN}ЧТО БЫЛО ИСПРАВЛЕНО:${NC}"
-echo -e "  • Добавлен перехват console.error для игнорирования ошибки"
-echo -e "  • Добавлен перехват onError карты для игнорирования ошибки"
-echo -e "  • Ошибка больше не будет показываться в консоли"
-echo -e "\n${GREEN}ЗАПУСКАЙ: pnpm dev${NC}\n"
+echo -e "${GREEN}✅ Dashboard исправлен: перетаскивание теперь работает сразу после открытия!${NC}"
+echo -e "${YELLOW}📌 Ключевые изменения:${NC}"
+echo "   - Добавлен useLayoutEffect для пересчёта bounds при открытии и изменении размера"
+echo "   - Зависимость open в эффекте для корректного первого расчёта границ"
+echo "   - Повышен zIndex до 1400 для уверенного перекрытия панели управления"
+echo "   - Все хуки объявлены до условного возврата"
+echo "   - Перетаскивание работает без F11"
+echo ""
+echo -e "${YELLOW}⚠️  Резервная копия сохранена как ${DASHBOARD_FILE}${BACKUP_SUFFIX}${NC}"
+echo -e "${GREEN}✨ Перезапустите приложение и проверьте перетаскивание дашборда.${NC}"
