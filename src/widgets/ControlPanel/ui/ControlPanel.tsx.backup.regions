@@ -20,7 +20,6 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import LandscapeIcon from '@mui/icons-material/Landscape';
 import LayersClearIcon from '@mui/icons-material/LayersClear';
 import SearchIcon from '@mui/icons-material/Search';
-import PublicIcon from "@mui/icons-material/Public";
 import { HexColorPicker } from 'react-colorful';
 
 import { PaletteLibrary } from '../../../shared/ui/PaletteLibrary';
@@ -28,7 +27,6 @@ import { GradientPicker } from '../../../shared/ui/GradientPicker';
 import { CameraControls } from '../../../shared/ui/CameraControls';
 import { SliderWithInput } from '../../../shared/ui/SliderWithInput';
 import { SearchPanel } from './SearchPanel';
-import { RegionList } from "../../../shared/ui/RegionList";
 import { PaletteName } from '../../../entities/palette/lib/constants';
 import { invertPalette } from '../../../shared/lib/color/utils';
 import { GradientConfig } from '../../../entities/palette/lib/types';
@@ -95,11 +93,6 @@ interface ControlPanelProps {
   terrainMode: TerrainMode;
   onTerrainModeChange: (mode: TerrainMode) => void;
   locations: Location[] | null;
-  regionsList: string[];
-  selectedRegions: Set<string>;
-  onRegionsSelectionChange: (regions: Set<string>) => void;
-  onCenterRegion: (region: string) => void;
-  onCenterSelectedRegions: () => void;
   onCenterLocation?: (location: Location) => void;
 }
 
@@ -191,7 +184,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
             <Tab icon={<CenterFocusWeakIcon fontSize="small" />} label="Вид" />
             <Tab icon={<FilterListIcon fontSize="small" />} label="Фильтры" />
             <Tab icon={<SearchIcon fontSize="small" />} label="Поиск" />
-            <Tab icon={<PublicIcon fontSize="small" />} label="Регионы" />
           </Tabs>
 
           {activeTab === 0 && (
@@ -407,18 +399,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                 absolutePeriod={absolutePeriod}
                 currentPalette={currentPalette}
                 fillOpacity={settings.fillOpacity}
-              />
-            </Stack>
-          )}
-
-          {activeTab === 6 && (
-            <Stack spacing={2}>
-              <RegionList
-                regions={props.regionsList}
-                selectedRegions={props.selectedRegions}
-                onSelectionChange={props.onRegionsSelectionChange}
-                onCenterRegion={props.onCenterRegion}
-                onCenterSelected={props.onCenterSelectedRegions}
               />
             </Stack>
           )}

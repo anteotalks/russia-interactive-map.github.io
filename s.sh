@@ -1,249 +1,78 @@
 #!/bin/bash
 
-# Script to change MapboxDraw polygon selection highlight color to dark gray
-# Target file: src/features/draw/DrawControl.tsx
+echo "🔧 Добавляем фильтрацию населенных пунктов по выбранным регионам..."
 
-TARGET_FILE="src/features/draw/DrawControl.tsx"
+# ============================================================================
+# 1. ОБНОВЛЯЕМ MapPage.tsx - добавляем фильтрацию по регионам
+# ============================================================================
 
-# Check if file exists
-if [ ! -f "$TARGET_FILE" ]; then
-    echo "❌ Error: File $TARGET_FILE not found!"
-    exit 1
-fi
+FILE="src/pages/MapPage/ui/MapPage.tsx"
 
-# Create backup
-BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
-cp "$TARGET_FILE" "$BACKUP_FILE"
-echo "✅ Backup created: $BACKUP_FILE"
+# Создаем бэкап
+cp "$FILE" "$FILE.backup.filter"
 
-# Create the custom styles configuration with dark gray highlight (#555555)
-cat > src/features/draw/drawStyles.ts << 'EOF'
-// Custom styles for MapboxDraw with dark gray selection highlight (#555555)
-// Based on mapbox-gl-draw default styles
-
-const customDrawStyles = [
-  // ACTIVE (being drawn) styles
-  {
-    id: 'gl-draw-line',
-    type: 'line',
-    filter: ['all', ['==', '$type', 'LineString'], ['!=', 'mode', 'static']],
-    layout: {
-      'line-cap': 'round',
-      'line-join': 'round'
-    },
-    paint: {
-      'line-color': '#D20C0C',
-      'line-dasharray': [0.2, 2],
-      'line-width': 2
-    }
-  },
-  {
-    id: 'gl-draw-polygon-fill',
-    type: 'fill',
-    filter: ['all', ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
-    paint: {
-      'fill-color': '#D20C0C',
-      'fill-outline-color': '#D20C0C',
-      'fill-opacity': 0.1
-    }
-  },
-  {
-    id: 'gl-draw-polygon-stroke-active',
-    type: 'line',
-    filter: ['all', ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
-    layout: {
-      'line-cap': 'round',
-      'line-join': 'round'
-    },
-    paint: {
-      'line-color': '#D20C0C',
-      'line-dasharray': [0.2, 2],
-      'line-width': 2
-    }
-  },
-
-  // SELECTED (active) styles - THESE ARE THE KEY ONES WE'RE CHANGING
-  // Default was orange (#fbb03b), now changing to dark gray (#555555)
-  {
-    id: 'gl-draw-polygon-fill-active',
-    type: 'fill',
-    filter: ['all', ['==', 'active', 'true'], ['==', '$type', 'Polygon']],
-    paint: {
-      'fill-color': '#555555',
-      'fill-outline-color': '#555555',
-      'fill-opacity': 0.4
-    }
-  },
-  {
-    id: 'gl-draw-polygon-stroke-active',
-    type: 'line',
-    filter: ['all', ['==', 'active', 'true'], ['==', '$type', 'Polygon']],
-    layout: {
-      'line-cap': 'round',
-      'line-join': 'round'
-    },
-    paint: {
-      'line-color': '#555555',
-      'line-dasharray': [0.2, 2],
-      'line-width': 2
-    }
-  },
-
-  // Vertex styles (keep default)
-  {
-    id: 'gl-draw-polygon-and-line-vertex-halo-active',
-    type: 'circle',
-    filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point'], ['!=', 'mode', 'static']],
-    paint: {
-      'circle-radius': 12,
-      'circle-color': '#FFF'
-    }
-  },
-  {
-    id: 'gl-draw-polygon-and-line-vertex-active',
-    type: 'circle',
-    filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point'], ['!=', 'mode', 'static']],
-    paint: {
-      'circle-radius': 8,
-      'circle-color': '#D20C0C'
-    }
-  },
-
-  // Inactive (static) styles
-  {
-    id: 'gl-draw-polygon-fill-static',
-    type: 'fill',
-    filter: ['all', ['==', '$type', 'Polygon'], ['==', 'mode', 'static']],
-    paint: {
-      'fill-color': '#000',
-      'fill-outline-color': '#000',
-      'fill-opacity': 0.1
-    }
-  },
-  {
-    id: 'gl-draw-polygon-stroke-static',
-    type: 'line',
-    filter: ['all', ['==', '$type', 'Polygon'], ['==', 'mode', 'static']],
-    layout: {
-      'line-cap': 'round',
-      'line-join': 'round'
-    },
-    paint: {
-      'line-color': '#000',
-      'line-width': 2
-    }
-  }
-];
-
-export default customDrawStyles;
+# Находим строку с filteredLocations и добавляем ее после stableLocations
+cat > /tmp/filtered_locations.txt << 'EOF'
+  // Фильтруем локации по выбранным регионам
+  const filteredLocations = useMemo(() => {
+    if (!locations) return null;
+    if (selectedRegions.size === 0) return null; // Если не выбрано ни одного региона - не показываем ничего
+    return locations.filter(loc => selectedRegions.has(loc.region));
+  }, [locations, selectedRegions]);
 EOF
 
-echo "✅ Created drawStyles.ts"
+# Вставляем после stableLocations
+sed -i '/const stableLocations = useMemo(() => locations, \[locations\]);/a '"$(cat /tmp/filtered_locations.txt)"'' "$FILE"
 
-# Now modify the DrawControl.tsx file
-node << 'EOF'
-const fs = require('fs');
-const path = require('path');
+rm -f /tmp/filtered_locations.txt
 
-const targetFile = 'src/features/draw/DrawControl.tsx';
+# Меняем stableLocations на filteredLocations в layerSettings и deckLayers
+sed -i 's/const deckLayers = useMapLayers(stableLocations/const deckLayers = useMapLayers(filteredLocations/' "$FILE"
+sed -i 's/const layerSettings = useMemo(() => ({/const layerSettings = useMemo(() => ({/' "$FILE"
 
-if (!fs.existsSync(targetFile)) {
-    console.error('❌ File not found:', targetFile);
-    process.exit(1);
-}
+# Добавляем зависимость selectedRegions в useMemo для filteredLocations
+echo "✅ Фильтрация добавлена"
 
-console.log(`📝 Processing: ${targetFile}`);
+# ============================================================================
+# 2. ОБНОВЛЯЕМ ControlPanel.tsx - добавляем информацию о количестве выбранных
+# ============================================================================
 
-let content = fs.readFileSync(targetFile, 'utf8');
+FILE_CP="src/widgets/ControlPanel/ui/ControlPanel.tsx"
 
-// Check if custom styles are already imported
-if (content.includes('customDrawStyles')) {
-    console.log('⚠️ Custom styles already appear to be configured. Skipping modification.');
-    process.exit(0);
-}
+# Добавляем отображение количества выбранных регионов и точек
+sed -i '/{activeTab === 6 && (/,/)}/ {
+  /<RegionList/ a\
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                {props.selectedRegions.size === 0 
+                  ? "⚠️ Не выбрано ни одного региона - населенные пункты не отображаются"
+                  : `✅ Выбрано регионов: ${props.selectedRegions.size}`}
+              </Typography>
+}' "$FILE_CP"
 
-// Add import statement after the last import
-const importStatement = "import customDrawStyles from './drawStyles';\n";
+echo "✅ ControlPanel.tsx обновлен"
 
-// Find the last import statement
-const importRegex = /^import .*;$/gm;
-const imports = content.match(importRegex);
+# ============================================================================
+# 3. ДОБАВЛЯЕМ КНОПКУ "Сбросить выделение" в RegionList если нет
+# ============================================================================
 
-if (imports && imports.length > 0) {
-    const lastImport = imports[imports.length - 1];
-    const lastImportIndex = content.lastIndexOf(lastImport);
-    const insertPosition = lastImportIndex + lastImport.length;
-    content = content.slice(0, insertPosition) + '\n' + importStatement + content.slice(insertPosition);
-} else {
-    // If no imports found, add at the top
-    content = importStatement + content;
-}
-
-// Find the MapboxDraw initialization and add styles property
-const drawInitRegex = /new MapboxDraw\(\{[\s\S]*?\}\)/;
-const drawInitMatch = content.match(drawInitRegex);
-
-if (!drawInitMatch) {
-    console.log('❌ Could not find MapboxDraw initialization');
-    process.exit(1);
-}
-
-let drawInit = drawInitMatch[0];
-
-// Check if styles property already exists
-if (drawInit.includes('styles:')) {
-    console.log('⚠️ Styles property already exists, skipping...');
-} else {
-    // Add styles property before the closing brace
-    // Find the last property or closing brace
-    const lastBraceIndex = drawInit.lastIndexOf('}');
-    if (lastBraceIndex > -1) {
-        // Check if there's already content before the closing brace
-        const beforeBrace = drawInit.substring(0, lastBraceIndex);
-        const afterBrace = drawInit.substring(lastBraceIndex);
-        
-        // Add comma if needed
-        let newDrawInit = beforeBrace;
-        if (!beforeBrace.trim().endsWith(',')) {
-            newDrawInit += ',';
-        }
-        newDrawInit += '\n      styles: customDrawStyles';
-        newDrawInit += afterBrace;
-        
-        drawInit = newDrawInit;
-    }
-}
-
-// Replace the MapboxDraw initialization
-content = content.replace(drawInitMatch[0], drawInit);
-
-// Write the modified content
-fs.writeFileSync(targetFile, content);
-console.log('✅ DrawControl.tsx modified successfully!');
-
-console.log('\n🎉 Done! The polygon selection highlight color is now dark gray (#555555)');
-console.log('   (Previously orange, now changed to dark gray)');
-console.log('\n📚 Based on mapbox-gl-draw documentation:');
-console.log('   - gl-draw-polygon-fill-active → fill color for selected polygons');
-console.log('   - gl-draw-polygon-stroke-active → stroke color for selected polygons');
-
-EOF
-
-# Check if modification was successful
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "═══════════════════════════════════════════════════════════"
-    echo "✅ Script completed successfully!"
-    echo ""
-    echo "Changes made:"
-    echo "  1. Created backup: $BACKUP_FILE"
-    echo "  2. Created drawStyles.ts with dark gray highlight color (#555555)"
-    echo "  3. Modified DrawControl.tsx to use custom styles"
-    echo ""
-    echo "The selected polygon highlight color is now DARK GRAY instead of orange."
-    echo "═══════════════════════════════════════════════════════════"
-else
-    echo "❌ Script failed. Restoring from backup..."
-    cp "$BACKUP_FILE" "$TARGET_FILE"
-    echo "✅ Restored original file from backup"
+if [ -f "src/shared/ui/RegionList/RegionList.tsx" ]; then
+    # Добавляем кнопку сброса в RegionList
+    sed -i '/<Button size="small" variant="outlined" onClick={handleDeselectAll}/a \        <Button size="small" variant="outlined" onClick={() => onSelectionChange(new Set())} fullWidth>\n          Сбросить\n        </Button>' src/shared/ui/RegionList/RegionList.tsx
+    echo "✅ Добавлена кнопка 'Сбросить' в RegionList"
 fi
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════════"
+echo "✅ ГОТОВО! Теперь работает фильтрация:"
+echo ""
+echo "   - Выбрано 0 регионов → населенные пункты НЕ ПОКАЗЫВАЮТСЯ"
+echo "   - Выбран 1 регион → показываются только пункты этого региона"
+echo "   - Выбрано 2 региона → показываются пункты этих 2 регионов"
+echo "   - Выбрано 5 регионов → показываются пункты этих 5 регионов"
+echo ""
+echo "В панели видно:"
+echo "   - ⚠️ Предупреждение если не выбрано ни одного региона"
+echo "   - ✅ Количество выбранных регионов"
+echo ""
+echo "Перезапустите проект: pnpm dev"
+echo "═══════════════════════════════════════════════════════════════════"

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import Draggable, { DraggableData, DraggableEvent } from 'react-draggable';
 import {
   Paper, FormControl, InputLabel, Select, MenuItem, Typography, Box,
@@ -17,18 +17,15 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import PaletteIcon from '@mui/icons-material/Palette';
 import CenterFocusWeakIcon from '@mui/icons-material/CenterFocusWeak';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import SearchIcon from "@mui/icons-material/Search";
 import LandscapeIcon from '@mui/icons-material/Landscape';
 import LayersClearIcon from '@mui/icons-material/LayersClear';
-import SearchIcon from '@mui/icons-material/Search';
-import PublicIcon from "@mui/icons-material/Public";
 import { HexColorPicker } from 'react-colorful';
-
 import { PaletteLibrary } from '../../../shared/ui/PaletteLibrary';
 import { GradientPicker } from '../../../shared/ui/GradientPicker';
 import { CameraControls } from '../../../shared/ui/CameraControls';
 import { SliderWithInput } from '../../../shared/ui/SliderWithInput';
-import { SearchPanel } from './SearchPanel';
-import { RegionList } from "../../../shared/ui/RegionList";
+import { SearchPanel } from "./SearchPanel";
 import { PaletteName } from '../../../entities/palette/lib/constants';
 import { invertPalette } from '../../../shared/lib/color/utils';
 import { GradientConfig } from '../../../entities/palette/lib/types';
@@ -36,14 +33,12 @@ import { CameraSettings } from '../../../shared/types/camera';
 import { LayerConfig } from '../../../shared/lib/hooks/useMapLayersControl';
 import { FilterSettings } from '../../../shared/types/visualization';
 import { RegionLayerConfig } from '../../../entities/region/lib/types';
-import type { Location } from '../../../entities/location/lib/types';
-
+import type { Location } from "../../../entities/location/lib/types";
 export type YearType = '2002' | '2010' | '2021';
 export type VisualizationMode = 'dynamics' | 'absolute';
 export type DynamicsPeriod = '2002-2010' | '2010-2021' | '2002-2021';
 export type FilterDirection = 'all' | 'growth' | 'decline';
 export type TerrainMode = 'none' | 'hillshade' | '3d';
-
 export interface VisualizationSettings {
   selectedYear: YearType;
   minRadius: number;
@@ -53,7 +48,6 @@ export interface VisualizationSettings {
   strokeColor: string;
   fillOpacity: number;
 }
-
 interface ControlPanelProps {
   settings: VisualizationSettings;
   onSettingsChange: (newSettings: Partial<VisualizationSettings>) => void;
@@ -93,16 +87,11 @@ interface ControlPanelProps {
   regionConfig: RegionLayerConfig;
   onRegionConfigChange: (newConfig: Partial<RegionLayerConfig>) => void;
   terrainMode: TerrainMode;
-  onTerrainModeChange: (mode: TerrainMode) => void;
-  locations: Location[] | null;
-  regionsList: string[];
-  selectedRegions: Set<string>;
-  onRegionsSelectionChange: (regions: Set<string>) => void;
-  onCenterRegion: (region: string) => void;
-  onCenterSelectedRegions: () => void;
   onCenterLocation?: (location: Location) => void;
+  // Пропсы для поиска
+  locations: Location[] | null;
+  onTerrainModeChange: (mode: TerrainMode) => void;
 }
-
 const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
   const {
     settings, onSettingsChange, selectedYear, dynamicsMode, onDynamicsModeChange,
@@ -114,16 +103,13 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
     isVisible, onVisibilityChange, filterSettings, onFilterChange,
     populationMin, populationMax, dynamicsMin, dynamicsMax,
     regionConfig, onRegionConfigChange,
-    terrainMode, onTerrainModeChange,
-    locations, onCenterLocation
+    terrainMode, onTerrainModeChange
   } = props;
-
   const nodeRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 20, y: 20 });
   const [bounds, setBounds] = useState({ left: 0, top: 0, right: 0, bottom: 0 });
   const [colorPickerAnchor, setColorPickerAnchor] = useState<null | HTMLElement>(null);
   const [activeTab, setActiveTab] = useState(0);
-
   useEffect(() => {
     if (nodeRef.current) {
       const updateBounds = () => {
@@ -140,10 +126,8 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
       return () => window.removeEventListener('resize', updateBounds);
     }
   }, [isVisible]);
-
   const handleDrag = useCallback((_e: DraggableEvent, data: DraggableData) => setPosition({ x: data.x, y: data.y }), []);
   const handleStop = useCallback((_e: DraggableEvent, data: DraggableData) => setPosition({ x: data.x, y: data.y }), []);
-
   const handleRegionVisibleChange = (e: React.ChangeEvent<HTMLInputElement>) => 
     onRegionConfigChange({ visible: e.target.checked });
   const handleYearChange = (event: SelectChangeEvent) => onSettingsChange({ selectedYear: event.target.value as YearType });
@@ -157,9 +141,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
   const handleColorChange = (color: string) => onSettingsChange({ strokeColor: color });
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => setActiveTab(newValue);
   const handleTerrainModeChange = (_event: React.MouseEvent<HTMLElement>, newMode: TerrainMode | null) => { if (newMode) onTerrainModeChange(newMode); };
-
   const baseLayers = layers.filter(l => l.type === 'base');
-
   if (!isVisible) {
     return (
       <Draggable nodeRef={nodeRef} handle=".drag-handle" bounds={bounds} position={position} onDrag={handleDrag} onStop={handleStop}>
@@ -171,7 +153,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
       </Draggable>
     );
   }
-
   return (
     <Draggable nodeRef={nodeRef} handle=".drag-handle" bounds={bounds} position={position} onDrag={handleDrag} onStop={handleStop}>
       <div ref={nodeRef} style={{ position: 'absolute', zIndex: 1300 }}>
@@ -183,7 +164,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
             </Box>
             <IconButton size="small" onClick={toggleVisibility} title="Скрыть панель (Alt)"><CloseIcon fontSize="small" /></IconButton>
           </Box>
-
           <Tabs value={activeTab} onChange={handleTabChange} sx={{ mb: 2 }} variant="fullWidth">
             <Tab icon={<ColorizeIcon fontSize="small" />} label="Визуализация" />
             <Tab icon={<MapIcon fontSize="small" />} label="Слои" />
@@ -191,9 +171,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
             <Tab icon={<CenterFocusWeakIcon fontSize="small" />} label="Вид" />
             <Tab icon={<FilterListIcon fontSize="small" />} label="Фильтры" />
             <Tab icon={<SearchIcon fontSize="small" />} label="Поиск" />
-            <Tab icon={<PublicIcon fontSize="small" />} label="Регионы" />
           </Tabs>
-
           {activeTab === 0 && (
             <Stack spacing={2}>
               <Box><Typography variant="subtitle2" color="primary" gutterBottom>Режим отображения</Typography>
@@ -202,7 +180,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                   <FormControlLabel value="absolute" control={<Radio size="small" />} label="Абсолютный прирост/убыль" />
                 </RadioGroup>
               </Box>
-
               {mode === 'absolute' && (
                 <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
                   <Typography variant="subtitle2" gutterBottom>Период</Typography>
@@ -219,7 +196,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                   </RadioGroup>
                 </Box>
               )}
-
+              {/* Показываем выбор года ТОЛЬКО в режиме динамики */}
               {mode === 'dynamics' && (
                 <FormControl fullWidth size="small">
                   <InputLabel>Год переписи</InputLabel>
@@ -230,7 +207,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                   </Select>
                 </FormControl>
               )}
-
               {mode === 'dynamics' && selectedYear === '2021' && (
                 <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
                   <Typography variant="subtitle2" gutterBottom>Режим динамики</Typography>
@@ -240,7 +216,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                   </RadioGroup>
                 </Box>
               )}
-
               {mode === 'dynamics' && selectedYear === '2002' && (
                 <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
                   <Typography variant="body2" color="text.secondary">Для 2002 года используется нейтральный цвет</Typography>
@@ -252,17 +227,14 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                   <Typography variant="body2" color="text.secondary">Цвет показывает динамику 2002 → 2010</Typography>
                 </Box>
               )}
-
               <Divider sx={{ my: 1 }} />
               <Typography variant="subtitle2" color="primary">Размер точек</Typography>
               <SliderWithInput label="Минимальный размер (px)" value={settings.minRadius} onChange={(val) => onSettingsChange({ minRadius: val })} min={0} max={20} step={0.5} unit="px" />
               <SliderWithInput label="Степенной коэффициент" value={settings.powerCoefficient} onChange={(val) => onSettingsChange({ powerCoefficient: val })} min={0} max={1} step={0.01} />
               <SliderWithInput label="Масштаб" value={settings.radiusScale} onChange={(val) => onSettingsChange({ radiusScale: val })} min={0.5} max={500} step={0.5} />
-
               <Divider sx={{ my: 1 }} />
               <Typography variant="subtitle2" color="primary">Обводка точек</Typography>
               <SliderWithInput label="Толщина обводки (px)" value={settings.strokeWidth} onChange={(val) => onSettingsChange({ strokeWidth: val })} min={0} max={5} step={0.1} unit="px" />
-
               <Box>
                 <Typography variant="subtitle2" gutterBottom>Цвет обводки</Typography>
                 <Stack direction="row" spacing={1} alignItems="center">
@@ -273,7 +245,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                   <Box sx={{ p: 2 }}><HexColorPicker color={settings.strokeColor} onChange={handleColorChange} /></Box>
                 </Popover>
               </Box>
-
               <Divider sx={{ my: 1 }} />
               <Typography variant="subtitle2" color="primary">Прозрачность точек</Typography>
               <SliderWithInput
@@ -286,7 +257,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               />
             </Stack>
           )}
-
+          
           {activeTab === 1 && (
             <Stack spacing={2}>
               <Typography variant="subtitle2" color="primary">Слои карты</Typography>
@@ -298,6 +269,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               </FormGroup>
               <Divider sx={{ my: 1 }} />
               
+              {/* Секция границ регионов */}
               <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle2" color="primary" gutterBottom>Границы регионов</Typography>
                 <FormControlLabel
@@ -327,7 +299,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                   <HexColorPicker color={regionConfig.color} onChange={(c) => onRegionConfigChange({ color: c })} />
                 </Popover>
               </Box>
-
               <Divider sx={{ my: 1 }} />
               <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle2" color="primary" gutterBottom>Режим рельефа</Typography>
@@ -344,7 +315,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               </Box>
             </Stack>
           )}
-
+          
           {activeTab === 2 && (
             <Stack spacing={3}>
               <Box><Typography variant="subtitle2" color="primary" gutterBottom>Библиотека палитр</Typography>
@@ -378,11 +349,11 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               </Box>
             </Stack>
           )}
-
+          
           {activeTab === 3 && (
             <CameraControls settings={cameraSettings} onSettingChange={onCameraChange} onReset={onCameraReset} onSync={onCameraSync} isSynced={isCameraSynced} />
           )}
-
+          
           {activeTab === 4 && (
             <Stack spacing={2}>
               <Typography variant="subtitle2" color="primary">Фильтр по населению</Typography>
@@ -395,38 +366,11 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               <SliderWithInput label="Макс. динамика" value={filterSettings.dynamicsMax} onChange={(val) => onFilterChange({ dynamicsMax: val })} min={dynamicsMin} max={dynamicsMax} step={1} unit="%" />
             </Stack>
           )}
-
-          {activeTab === 5 && (
-            <Stack spacing={2}>
-              <SearchPanel
-                locations={locations}
-                onCenterLocation={onCenterLocation}
-                selectedYear={selectedYear}
-                mode={mode}
-                dynamicsPeriod={dynamicsMode}
-                absolutePeriod={absolutePeriod}
-                currentPalette={currentPalette}
-                fillOpacity={settings.fillOpacity}
-              />
-            </Stack>
-          )}
-
-          {activeTab === 6 && (
-            <Stack spacing={2}>
-              <RegionList
-                regions={props.regionsList}
-                selectedRegions={props.selectedRegions}
-                onSelectionChange={props.onRegionsSelectionChange}
-                onCenterRegion={props.onCenterRegion}
-                onCenterSelected={props.onCenterSelectedRegions}
-              />
-            </Stack>
-          )}
+          
         </Paper>
       </div>
     </Draggable>
   );
 };
-
 export const ControlPanel = React.memo(ControlPanelComponent);
 export default ControlPanel;

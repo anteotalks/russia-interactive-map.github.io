@@ -81,7 +81,6 @@ export const MapPage: React.FC = () => {
   const [dynamicsMin, setDynamicsMin] = useState(-100);
   const [dynamicsMax, setDynamicsMax] = useState(100);
   const [terrainMode, setTerrainMode] = useState<TerrainMode>('hillshade');
-  const [selectedRegions, setSelectedRegions] = useState<Set<string>>(new Set());
 
   const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
   const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
@@ -169,6 +168,15 @@ export const MapPage: React.FC = () => {
   }, []);
   
   const handleTerrainModeChange = useCallback((mode: TerrainMode) => setTerrainMode(mode), []);
+  const handleCenterLocation = useCallback((location: Location) => {
+    if (mapRef.current) {
+      mapRef.current.flyTo({
+        center: [location.longitude, location.latitude],
+        zoom: 12,
+        duration: 1000
+      });
+    }
+  }, [mapRef]);
 
   const handleMapClick = useCallback((info: PickingInfo) => {
     if (!info.picked) return;
@@ -188,50 +196,7 @@ export const MapPage: React.FC = () => {
 
   const handleCloseDashboard = useCallback(() => setDashboardOpen(false), []);
 
-  const handleCenterLocation = useCallback((location: Location) => {
-    if (mapRef.current) {
-      mapRef.current.flyTo({
-        center: [location.longitude, location.latitude],
-        zoom: 12,
-        duration: 1000
-      });
-    }
-  }, [mapRef]);
-
-  const handleCenterRegion = useCallback((regionName: string) => {
-    if (!locations || !mapRef.current) return;
-    const regionLocations = locations.filter(l => l.region === regionName);
-    if (regionLocations.length === 0) return;
-    const center = regionLocations.reduce(
-      (acc, loc) => ({ lng: acc.lng + loc.longitude, lat: acc.lat + loc.latitude }),
-      { lng: 0, lat: 0 }
-    );
-    center.lng /= regionLocations.length;
-    center.lat /= regionLocations.length;
-    mapRef.current.flyTo({
-      center: [center.lng, center.lat],
-      zoom: 9,
-      duration: 1000
-    });
-  }, [locations, mapRef]);
-
-  const handleCenterSelectedRegions = useCallback(() => {
-    if (!locations || selectedRegions.size === 0 || !mapRef.current) return;
-    const selectedLocations = locations.filter(l => selectedRegions.has(l.region));
-    if (selectedLocations.length === 0) return;
-    const center = selectedLocations.reduce(
-      (acc, loc) => ({ lng: acc.lng + loc.longitude, lat: acc.lat + loc.latitude }),
-      { lng: 0, lat: 0 }
-    );
-    center.lng /= selectedLocations.length;
-    center.lat /= selectedLocations.length;
-    mapRef.current.flyTo({
-      center: [center.lng, center.lat],
-      zoom: 7,
-      duration: 1000
-    });
-  }, [locations, selectedRegions, mapRef]);
-
+  // Обработчик создания полигона
   const onDrawCreate = useCallback((evt: { features: object[] }) => {
     if (isProcessingRef.current) return;
     if (!locations || locations.length === 0 || !evt.features[0]) return;
@@ -267,25 +232,23 @@ export const MapPage: React.FC = () => {
     }
   }, [locations]);
 
+  // Обработчик обновления полигона
   const onDrawUpdate = useCallback((evt: { features: object[]; action: string }) => {
     console.log('Polygon updated:', evt.action);
   }, []);
 
+  // Обработчик удаления полигона
   const onDrawDelete = useCallback(() => {
     setDashboardOpen(false);
     setDashboardData(null);
   }, []);
 
+  // Обработчик смены режима
   const onDrawModeChange = useCallback((mode: string) => {
     console.log('Draw mode changed:', mode);
   }, []);
 
   const stableLocations = useMemo(() => locations, [locations]);
-  
-  const regionsList = useMemo(() => {
-    if (!locations) return [];
-    return [...new Set(locations.map(l => l.region))].sort();
-  }, [locations]);
 
   const layerSettings = useMemo(() => ({
     selectedYear: settings.selectedYear,
@@ -399,16 +362,19 @@ export const MapPage: React.FC = () => {
         dynamicsMin={dynamicsMin}
         dynamicsMax={dynamicsMax}
         regionConfig={regionConfig}
+        locations={locations}
+        onCenterLocation={(location) => {
+          if (mapRef.current) {
+            mapRef.current.flyTo({
+              center: [location.longitude, location.latitude],
+              zoom: 12,
+              duration: 1000
+            });
+          }
+        }}
         onRegionConfigChange={handleRegionConfigChange}
         terrainMode={terrainMode}
         onTerrainModeChange={handleTerrainModeChange}
-        locations={locations}
-        onCenterLocation={handleCenterLocation}
-        regionsList={regionsList}
-        selectedRegions={selectedRegions}
-        onRegionsSelectionChange={setSelectedRegions}
-        onCenterRegion={handleCenterRegion}
-        onCenterSelectedRegions={handleCenterSelectedRegions}
       />
       
       <MapWidget
