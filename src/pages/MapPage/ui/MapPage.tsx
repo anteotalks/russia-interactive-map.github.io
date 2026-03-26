@@ -133,24 +133,26 @@ export const MapPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
-    let ignore = false;
+    let isMounted = true;
 
     const load = async () => {
       try {
-        const data = await fetchRegionsFromGeoJSON('/ruregs1.geojson', signal);
-        if (!ignore) {
+        const data = await fetchRegionsFromGeoJSON('/ruregs32.geojson');
+        if (isMounted) {
           setRegionsData(data);
         }
       } catch (error) {
-        if (!ignore && error instanceof Error && error.name !== 'AbortError') {
+        if (isMounted && error instanceof Error && error.name !== 'AbortError') {
           console.warn('⚠️ Не удалось загрузить границы регионов:', error);
         }
       }
     };
+
     load();
-    return () => { ignore = true; controller.abort(); };
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleMapViewStateChange = useCallback((newViewState: any) => handleViewStateChange(newViewState), [handleViewStateChange]);
@@ -280,18 +282,16 @@ export const MapPage: React.FC = () => {
     console.log('Draw mode changed:', mode);
   }, []);
 
-  // Список всех регионов для панели
+  const stableLocations = useMemo(() => locations, [locations]);
+  
   const regionsList = useMemo(() => {
     if (!locations) return [];
     return [...new Set(locations.map(l => l.region))].sort();
   }, [locations]);
 
-  // ФИЛЬТРУЕМ ЛОКАЦИИ ПО ВЫБРАННЫМ РЕГИОНАМ
   const filteredLocations = useMemo(() => {
     if (!locations) return null;
-    // Если не выбрано ни одного региона - не показываем ничего
     if (selectedRegions.size === 0) return null;
-    // Показываем только точки из выбранных регионов
     return locations.filter(loc => selectedRegions.has(loc.region));
   }, [locations, selectedRegions]);
 
@@ -314,7 +314,6 @@ export const MapPage: React.FC = () => {
     showZeroPopulation: filterSettings.showZeroPopulation,
   }), [settings, mode, dynamicsMode, absolutePeriod, absoluteFilter, filterSettings]);
 
-  // Используем filteredLocations вместо locations
   const deckLayers = useMapLayers(filteredLocations, layerSettings, palette);
   const regionLayer = useRegionLayer(regionsData, regionConfig);
 

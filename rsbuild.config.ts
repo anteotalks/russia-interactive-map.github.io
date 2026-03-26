@@ -9,6 +9,12 @@ export default defineConfig({
   source: {
     define: publicVars,
   },
+  server: {
+    cors: {
+      origin: '*',           // Разрешить запросы с любых источников
+      methods: ['GET'],      // Разрешить только GET запросы
+    },
+  },
   tools: {
     postcss: {
       postcssOptions: {
