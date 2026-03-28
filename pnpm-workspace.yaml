@@ -1,0 +1,4 @@
+onlyBuiltDependencies:
+  - "@tailwindcss/oxide"
+  - "@vaadin/vaadin-usage-statistics"
+  - core-js
