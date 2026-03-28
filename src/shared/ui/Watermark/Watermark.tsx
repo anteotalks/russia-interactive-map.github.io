@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
 
 export const Watermark: React.FC = () => {
   return (
@@ -10,32 +10,33 @@ export const Watermark: React.FC = () => {
         left: 20,
         zIndex: 9998,
         pointerEvents: 'none',
-        fontFamily: 'Jost, sans-serif',
-        color: 'rgba(128, 128, 128, 0.5)',
-        lineHeight: 1.1,
         userSelect: 'none',
+        lineHeight: 1.1,
+        fontFamily: 'Jost, sans-serif',
       }}
     >
-      <Typography
-        component="div"
+      <Box
         sx={{
           fontWeight: 700,
           fontSize: '30px',
           textTransform: 'uppercase',
           letterSpacing: '1px',
+          color: 'rgba(128, 128, 128, 0.5)',
+          fontFamily: 'Jost, sans-serif',
         }}
       >
         АНТОН ПАВЛОВ
-      </Typography>
-      <Typography
-        component="div"
+      </Box>
+      <Box
         sx={{
           fontWeight: 400,
           fontSize: '26px',
+          color: 'rgba(128, 128, 128, 0.5)',
+          fontFamily: 'Jost, sans-serif',
         }}
       >
         tg-@anteotalks
-      </Typography>
+      </Box>
     </Box>
   );
 };

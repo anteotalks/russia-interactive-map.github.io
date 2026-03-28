@@ -1,5 +1,6 @@
 import React from 'react';
 import { MapPage } from './pages/MapPage';
+import { Watermark } from './shared/ui/Watermark';
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
       bottom: 0
     }}>
       <MapPage />
+      <Watermark />
     </div>
   );
 }
