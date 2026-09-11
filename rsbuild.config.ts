@@ -10,20 +10,15 @@ export default defineConfig({
     define: publicVars,
   },
   output: {
-    // Сборка новой версии идёт в папку react-app, а не в корень
+    // Сборка новой версии идёт в папку react-app
     distPath: {
       root: 'react-app',
     },
-    // Все статические ресурсы будут загружаться с префиксом /react-app/
-    assetPrefix: '/react-app/',
+    // КЛЮЧЕВОЕ: относительные пути './'
+    assetPrefix: './',
   },
   server: {
-    // Локальный dev-сервер тоже будет отдавать приложение по пути /react-app/
-    base: '/react-app/',
-    // ЯВНО принудительно копировать файлы из public в сборку react-app
-    publicDir: {
-      copyOnBuild: true,
-    },
+    // Убираем 'base', чтобы он не конфликтовал с assetPrefix при сборке
     cors: {
       origin: '*',
       methods: ['GET'],
