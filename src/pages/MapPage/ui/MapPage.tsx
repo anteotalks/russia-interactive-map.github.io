@@ -107,7 +107,7 @@ export const MapPage: React.FC = () => {
 
     const load = async () => {
       try {
-        const data = await fetchLocationsFromCSV('/data_seva_updated1.csv', signal);
+        const data = await fetchLocationsFromCSV(`${import.meta.env.BASE_URL}data_seva_updated1.csv`, signal);
         if (!ignore) {
           setLocations(data);
           setPopulationMax(getPopulationExtents(data)[1]);
@@ -137,7 +137,7 @@ export const MapPage: React.FC = () => {
 
     const load = async () => {
       try {
-        const data = await fetchRegionsFromGeoJSON('/ruregs32.geojson');
+        const data = await fetchRegionsFromGeoJSON(`${import.meta.env.BASE_URL}ruregs32.geojson`);
         if (isMounted) {
           setRegionsData(data);
         }
