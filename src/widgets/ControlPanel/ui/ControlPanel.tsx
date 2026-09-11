@@ -100,6 +100,8 @@ interface ControlPanelProps {
   onRegionsSelectionChange: (regions: Set<string>) => void;
   onCenterRegion: (region: string) => void;
   onCenterSelectedRegions: () => void;
+  northFilter: 'all' | 'north' | 'south';
+  onNorthFilterChange: (filter: 'all' | 'north' | 'south') => void;
 }
 
 const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
@@ -115,7 +117,8 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
     regionConfig, onRegionConfigChange,
     terrainMode, onTerrainModeChange,
     locations, onCenterLocation,
-    regionsList, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions
+    regionsList, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions,
+    northFilter, onNorthFilterChange
   } = props;
 
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -420,6 +423,20 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
                 onCenterRegion={onCenterRegion}
                 onCenterSelected={onCenterSelectedRegions}
               />
+
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="subtitle2" color="primary">Фильтр по северу</Typography>
+              <ToggleButtonGroup
+                value={northFilter}
+                exclusive
+                onChange={(_, val) => val && onNorthFilterChange(val)}
+                size="small"
+                fullWidth
+              >
+                <ToggleButton value="all">Все</ToggleButton>
+                <ToggleButton value="north">Только север</ToggleButton>
+                <ToggleButton value="south">Всё, кроме севера</ToggleButton>
+              </ToggleButtonGroup>
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                 {selectedRegions.size === 0 
                   ? "⚠️ Не выбрано ни одного региона - населенные пункты не отображаются"

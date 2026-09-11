@@ -10,6 +10,7 @@ export type Location = {
     populated_place: string;
     latitude: number;
     longitude: number;
+    is_north: number;
 };
 
 export type VisualizationMode = 'dynamics' | 'absolute';

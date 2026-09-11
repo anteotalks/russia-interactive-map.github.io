@@ -85,6 +85,7 @@ export const MapPage: React.FC = () => {
   const [dynamicsMax, setDynamicsMax] = useState(100);
   const [terrainMode, setTerrainMode] = useState<TerrainMode>('hillshade');
   const [selectedRegions, setSelectedRegions] = useState<Set<string>>(new Set());
+  const [northFilter, setNorthFilter] = useState<'all' | 'north' | 'south'>('all');
 
   const [regionsData, setRegionsData] = useState<FeatureCollection | null>(null);
   const [regionConfig, setRegionConfig] = useState<RegionLayerConfig>(DEFAULT_REGION_CONFIG);
@@ -294,9 +295,17 @@ export const MapPage: React.FC = () => {
 
   const filteredLocations = useMemo(() => {
     if (!locations) return null;
-    if (selectedRegions.size === 0) return null;
-    return locations.filter(loc => selectedRegions.has(loc.region));
-  }, [locations, selectedRegions]);
+    let filtered = locations;
+    if (selectedRegions.size > 0) {
+      filtered = filtered.filter(loc => selectedRegions.has(loc.region));
+    }
+    if (northFilter === 'north') {
+      filtered = filtered.filter(loc => loc.is_north === 1);
+    } else if (northFilter === 'south') {
+      filtered = filtered.filter(loc => loc.is_north === 0);
+    }
+    return filtered;
+  }, [locations, selectedRegions, northFilter]);
 
   const layerSettings = useMemo(() => ({
     selectedYear: settings.selectedYear,
@@ -420,6 +429,8 @@ export const MapPage: React.FC = () => {
         onRegionsSelectionChange={setSelectedRegions}
         onCenterRegion={handleCenterRegion}
         onCenterSelectedRegions={handleCenterSelectedRegions}
+        northFilter={northFilter}
+        onNorthFilterChange={setNorthFilter}
       />
       
       <MapWidget
