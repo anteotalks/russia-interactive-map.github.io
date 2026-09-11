@@ -260,7 +260,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
               <Typography variant="subtitle2" color="primary">Размер точек</Typography>
               <SliderWithInput label="Минимальный размер (px)" value={settings.minRadius} onChange={(val) => onSettingsChange({ minRadius: val })} min={0} max={20} step={0.5} unit="px" />
               <SliderWithInput label="Степенной коэффициент" value={settings.powerCoefficient} onChange={(val) => onSettingsChange({ powerCoefficient: val })} min={0} max={1} step={0.01} />
-              <SliderWithInput label="Масштаб" value={settings.radiusScale} onChange={(val) => onSettingsChange({ radiusScale: val })} min={0.5} max={500} step={0.5} />
+              <SliderWithInput label="Масштаб" value={settings.radiusScale} onChange={(val) => onSettingsChange({ radiusScale: val })} min={0.5} max={5000} step={0.5} />
 
               <Divider sx={{ my: 1 }} />
               <Typography variant="subtitle2" color="primary">Обводка точек</Typography>

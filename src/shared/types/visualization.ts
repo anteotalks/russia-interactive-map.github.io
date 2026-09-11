@@ -46,7 +46,7 @@ export const DEFAULT_FILTER_SETTINGS: FilterSettings = {
     populationMin: 0,
     populationMax: 0,
     dynamicsMin: -100,
-    dynamicsMax: 100,
+    dynamicsMax: 457600,
     showZeroPopulation: true
 };
 
