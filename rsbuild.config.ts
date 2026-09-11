@@ -10,7 +10,7 @@ export default defineConfig({
     define: publicVars,
   },
   output: {
-    assetPrefix: '/russia-interactive-map.github.io/',
+    assetPrefix: '/',
   },
   server: {
     cors: {

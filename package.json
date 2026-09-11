@@ -32,7 +32,7 @@
     "preview": "rsbuild preview",
     "lint": "eslint . --cache --max-warnings=0 --no-warn-ignored",
     "postinstall": "husky",
-    "deploy": "gh-pages -d dist -b gh-pages -e react-app"
+    "deploy": "gh-pages -d dist -b gh-pages"
   },
   "dependencies": {
     "@deck.gl/aggregation-layers": "^9.2.9",
