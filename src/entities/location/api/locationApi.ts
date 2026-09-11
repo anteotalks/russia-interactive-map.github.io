@@ -48,7 +48,6 @@ export const fetchLocationsFromCSV = async (
               populated_place: row['Населенный пункт']?.trim() || '',
               latitude: parseEuropeanNumber(row['Широта']),
               longitude: parseEuropeanNumber(row['Долгота']),
-              is_north: row['is_north'] === '1',
             }));
           resolve(locations);
         },

@@ -100,8 +100,6 @@ interface ControlPanelProps {
   onRegionsSelectionChange: (regions: Set<string>) => void;
   onCenterRegion: (region: string) => void;
   onCenterSelectedRegions: () => void;
-  northFilterMode?: 'all' | 'onlyNorth' | 'excludeNorth';
-  onNorthFilterModeChange?: (mode: 'all' | 'onlyNorth' | 'excludeNorth') => void;
 }
 
 const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
@@ -117,8 +115,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
     regionConfig, onRegionConfigChange,
     terrainMode, onTerrainModeChange,
     locations, onCenterLocation,
-    regionsList, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions,
-    northFilterMode = 'all', onNorthFilterModeChange
+    regionsList, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions
   } = props;
 
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -416,21 +413,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
 
           {activeTab === 6 && (
             <Stack spacing={2}>
-              <Box sx={{ p: 1.5, bgcolor: '#f5f5f5', borderRadius: 1, mb: 1 }}>
-                <Typography variant="subtitle2" color="primary" gutterBottom>
-                  Фильтр по северному полигону
-                </Typography>
-                <FormControlLabel
-                  control={<Switch size="small" checked={northFilterMode === 'onlyNorth'}
-                    onChange={(e) => onNorthFilterModeChange?.(e.target.checked ? 'onlyNorth' : 'all')} />}
-                  label="Только север"
-                />
-                <FormControlLabel
-                  control={<Switch size="small" checked={northFilterMode === 'excludeNorth'}
-                    onChange={(e) => onNorthFilterModeChange?.(e.target.checked ? 'excludeNorth' : 'all')} />}
-                  label="Исключить север"
-                />
-              </Box>
               <RegionList
                 regions={regionsList}
                 selectedRegions={selectedRegions}
