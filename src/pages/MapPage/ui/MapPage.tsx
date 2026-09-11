@@ -68,7 +68,7 @@ const chunkArray = <T,>(array: T[], chunkSize: number): T[][] => {
 };
 
 // Базовый путь к данным на GitHub Pages
-const DATA_BASE_PATH = '/russia-interactive-map.github.io/react-app/';
+const DATA_BASE_PATH = './';
 
 export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
