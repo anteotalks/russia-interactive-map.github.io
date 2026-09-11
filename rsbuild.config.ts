@@ -9,10 +9,13 @@ export default defineConfig({
   source: {
     define: publicVars,
   },
+  output: {
+    assetPrefix: '/russia-interactive-map.github.io/',
+  },
   server: {
     cors: {
-      origin: '*',           // Разрешить запросы с любых источников
-      methods: ['GET'],      // Разрешить только GET запросы
+      origin: '*',
+      methods: ['GET'],
     },
   },
   tools: {

@@ -1,29 +1,26 @@
 {
-  "name": "@trapar-waves/react-visgl-maplibre",
+  "name": "russia-population-map",
   "type": "module",
   "version": "1.1.23",
   "packageManager": "pnpm@10.30.1",
-  "description": "A React-based geospatial visualization template integrating Three.js, Deck.gl, and MapLibre for 3D map interactions and rich geospatial data rendering.",
+  "description": "A React-based geospatial visualization of 150K+ Settlement of Russia based on 2002, 2010 and 2021 cencuses data.",
   "author": {
-    "email": "admin@rikka.cc",
-    "name": "Rikka",
-    "url": "https://github.com/Muromi-Rikka"
+    "name": "Anton Pavlov",
+    "email": "anteotalks@gmail.com",
+    "url": "https://github.com/anteotalks"
   },
   "license": "MIT",
-  "homepage": "https://github.com/Trapar-waves/react-visgl-maplibre",
+  "homepage": "https://anteotalks.github.io/russia-interactive-map.github.io",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Trapar-waves/react-visgl-maplibre.git"
+    "url": "git+https://github.com/anteotalks/russia-interactive-map.github.io.git"
   },
   "bugs": {
-    "url": "https://github.com/Trapar-waves/react-visgl-maplibre/issues"
+    "url": "https://github.com/anteotalks/russia-interactive-map.github.io/issues"
   },
   "keywords": [
     "react",
-    "fiber",
     "maplibre",
-    "three",
-    "vis.gl",
     "deck.gl"
   ],
   "publishConfig": {
@@ -34,7 +31,8 @@
     "build": "rsbuild build",
     "preview": "rsbuild preview",
     "lint": "eslint . --cache --max-warnings=0 --no-warn-ignored",
-    "postinstall": "husky"
+    "postinstall": "husky",
+    "deploy": "gh-pages -d dist -b gh-pages -e react-app"
   },
   "dependencies": {
     "@deck.gl/aggregation-layers": "^9.2.9",
@@ -93,6 +91,7 @@
     "eslint-plugin-format": "^1.4.0",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.0",
+    "gh-pages": "^6.3.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "mapbox-gl": "^3.18.1",
