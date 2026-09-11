@@ -88,6 +88,7 @@ export const MapPage: React.FC = () => {
 
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [northFilterMode, setNorthFilterMode] = useState<'all' | 'onlyNorth' | 'excludeNorth'>('all');
 
   const { palette, selectedName, customGradient, selectPalette, setPaletteColors, setCustomGradient, toggleInvert } = usePalette();
   const { settings: cameraSettings, updateSetting: updateCameraSetting, resetToDefault: resetCamera, mapRef } = useCamera();
@@ -291,9 +292,26 @@ export const MapPage: React.FC = () => {
 
   const filteredLocations = useMemo(() => {
     if (!locations) return null;
-    if (selectedRegions.size === 0) return null;
-    return locations.filter(loc => selectedRegions.has(loc.region));
-  }, [locations, selectedRegions]);
+
+    // Ничего не выбрано — не показываем точки (как раньше)
+    if (selectedRegions.size === 0 && northFilterMode === 'all') return null;
+
+    let result = locations;
+
+    // Фильтр по регионам
+    if (selectedRegions.size > 0) {
+      result = result.filter(loc => selectedRegions.has(loc.region));
+    }
+
+    // Фильтр по северу
+    if (northFilterMode === 'onlyNorth') {
+      result = result.filter(loc => loc.is_north === true);
+    } else if (northFilterMode === 'excludeNorth') {
+      result = result.filter(loc => loc.is_north !== true);
+    }
+
+    return result;
+  }, [locations, selectedRegions, northFilterMode]);
 
   const layerSettings = useMemo(() => ({
     selectedYear: settings.selectedYear,
@@ -417,6 +435,8 @@ export const MapPage: React.FC = () => {
         onRegionsSelectionChange={setSelectedRegions}
         onCenterRegion={handleCenterRegion}
         onCenterSelectedRegions={handleCenterSelectedRegions}
+        northFilterMode={northFilterMode}
+        onNorthFilterModeChange={setNorthFilterMode}
       />
       
       <MapWidget

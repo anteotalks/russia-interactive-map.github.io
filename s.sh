@@ -1,229 +1,198 @@
 #!/bin/bash
 set -e
 
-echo "🎨 ДОБАВЛЯЕМ ШРИФТ JOST ВЕЗДЕ И ВОДЯНОЙ ЗНАК"
+PROJECT_DIR="/home/anton/Рабочий стол/проекты/russia-interactive-map.github.io"
+cd "$PROJECT_DIR" || { echo "❌ Папка не найдена"; exit 1; }
+
+echo "🔧 ПРИМЕНЯЮ ФИЛЬТР «СЕВЕР» В КОДЕ"
+
+# --- Бэкапы ---
+mkdir -p .backup_north_code
+cp src/entities/location/lib/types.ts .backup_north_code/ 2>/dev/null || true
+cp src/entities/location/api/locationApi.ts .backup_north_code/ 2>/dev/null || true
+cp src/pages/MapPage/ui/MapPage.tsx .backup_north_code/ 2>/dev/null || true
+cp src/widgets/ControlPanel/ui/ControlPanel.tsx .backup_north_code/ 2>/dev/null || true
+echo "📦 Бэкап в .backup_north_code/"
 
 # -----------------------------------------------------------------------------
-# 1. Обновляем index.css - добавляем шрифт Jost глобально
+# 1. types.ts — добавляем is_north
 # -----------------------------------------------------------------------------
-cat > src/index.css << 'EOF'
-@import url('https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&display=swap');
+python3 << 'PYEOF'
+import io
+path = "src/entities/location/lib/types.ts"
+with io.open(path, encoding="utf-8") as f:
+    content = f.read()
 
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  font-family: 'Jost', sans-serif !important;
-}
-
-#root {
-  width: 100%;
-  height: 100%;
-  font-family: 'Jost', sans-serif !important;
-}
-
-/* Применяем Jost ко всем элементам */
-* {
-  font-family: 'Jost', sans-serif !important;
-}
-
-/* Высокий z-index для всех draggable элементов */
-.react-draggable,
-.react-draggable-dragging,
-.rnd-container,
-[data-rnd] {
-  z-index: 1300 !important;
-}
-
-.control-panel-mini {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-  cursor: move;
-  transition: all 0.2s;
-  z-index: 1300;
-  font-family: 'Jost', sans-serif !important;
-}
-
-.control-panel-mini:hover {
-  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-  transform: scale(1.05);
-}
-
-/* Стили для Material UI компонентов */
-.MuiTypography-root,
-.MuiButton-root,
-.MuiFormControlLabel-label,
-.MuiInputLabel-root,
-.MuiMenuItem-root,
-.MuiTab-root,
-.MuiListItemText-primary,
-.MuiListItemText-secondary,
-.MuiChip-label,
-.MuiFormControl-root,
-.MuiSelect-select,
-.MuiRadio-root,
-.MuiSwitch-root,
-.MuiSlider-root,
-.MuiInputBase-root,
-.MuiPaper-root,
-.MuiCardContent-root,
-.MuiAlert-root {
-  font-family: 'Jost', sans-serif !important;
-}
-
-/* Стили для Recharts */
-.recharts-text,
-.recharts-cartesian-axis-tick-value,
-.recharts-tooltip-label,
-.recharts-default-tooltip {
-  font-family: 'Jost', sans-serif !important;
-}
-EOF
+if 'is_north' not in content:
+    content = content.replace(
+        "    longitude: number;\n};",
+        "    longitude: number;\n    is_north?: boolean;\n};"
+    )
+    with io.open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("✅ types.ts: is_north добавлен")
+else:
+    print("⏭️  types.ts: is_north уже есть")
+PYEOF
 
 # -----------------------------------------------------------------------------
-# 2. Обновляем index.tsx - добавляем импорт шрифта
+# 2. locationApi.ts — парсим is_north
 # -----------------------------------------------------------------------------
-cat > src/index.tsx << 'EOF'
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-import './index.css';
+python3 << 'PYEOF'
+import io
+path = "src/entities/location/api/locationApi.ts"
+with io.open(path, encoding="utf-8") as f:
+    content = f.read()
 
-// Импорт шрифта Jost через Google Fonts
-const link = document.createElement('link');
-link.href = 'https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&display=swap';
-link.rel = 'stylesheet';
-document.head.appendChild(link);
-
-const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
-EOF
-
-# -----------------------------------------------------------------------------
-# 3. Добавляем Watermark компонент
-# -----------------------------------------------------------------------------
-cat > src/shared/ui/Watermark/Watermark.tsx << 'EOF'
-import React from 'react';
-import { Box } from '@mui/material';
-
-export const Watermark: React.FC = () => {
-  return (
-    <Box
-      sx={{
-        position: 'fixed',
-        bottom: 20,
-        left: 20,
-        zIndex: 9998,
-        pointerEvents: 'none',
-        userSelect: 'none',
-        lineHeight: 1.1,
-        fontFamily: 'Jost, sans-serif',
-      }}
-    >
-      <Box
-        sx={{
-          fontWeight: 700,
-          fontSize: '30px',
-          textTransform: 'uppercase',
-          letterSpacing: '1px',
-          color: 'rgba(128, 128, 128, 0.5)',
-          fontFamily: 'Jost, sans-serif',
-        }}
-      >
-        АНТОН ПАВЛОВ
-      </Box>
-      <Box
-        sx={{
-          fontWeight: 400,
-          fontSize: '26px',
-          color: 'rgba(128, 128, 128, 0.5)',
-          fontFamily: 'Jost, sans-serif',
-        }}
-      >
-        tg-@anteotalks
-      </Box>
-    </Box>
-  );
-};
-
-export default Watermark;
-EOF
+if 'is_north' not in content:
+    content = content.replace(
+        "              longitude: parseEuropeanNumber(row['Долгота']),",
+        "              longitude: parseEuropeanNumber(row['Долгота']),\n"
+        "              is_north: row['is_north'] === '1',"
+    )
+    with io.open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("✅ locationApi.ts: is_north парсится")
+else:
+    print("⏭️  locationApi.ts: is_north уже парсится")
+PYEOF
 
 # -----------------------------------------------------------------------------
-# 4. Добавляем Watermark в App.tsx
+# 3. MapPage.tsx — состояние + фильтр + пропсы
 # -----------------------------------------------------------------------------
-cat > src/App.tsx << 'EOF'
-import React from 'react';
-import { MapPage } from './pages/MapPage';
-import { Watermark } from './shared/ui/Watermark';
+python3 << 'PYEOF'
+import io, re
+path = "src/pages/MapPage/ui/MapPage.tsx"
+with io.open(path, encoding="utf-8") as f:
+    content = f.read()
 
-function App() {
-  return (
-    <div style={{ 
-      width: '100%', 
-      height: '100%',
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0
-    }}>
-      <MapPage />
-      <Watermark />
-    </div>
-  );
-}
+# 3.1 Состояние
+if 'northFilterMode' not in content:
+    content = content.replace(
+        "const [dashboardOpen, setDashboardOpen] = useState(false);",
+        "const [dashboardOpen, setDashboardOpen] = useState(false);\n"
+        "  const [northFilterMode, setNorthFilterMode] = useState<'all' | 'onlyNorth' | 'excludeNorth'>('all');"
+    )
+    print("✅ MapPage: state northFilterMode")
 
-export default App;
-EOF
+# 3.2 Замена filteredLocations (любой вариант)
+pattern = re.compile(
+    r"  const filteredLocations = useMemo\(\(\) => \{.*?\}, \[.*?\]\);",
+    re.DOTALL
+)
+new_filter = """  const filteredLocations = useMemo(() => {
+    if (!locations) return null;
+
+    // Ничего не выбрано — не показываем точки (как раньше)
+    if (selectedRegions.size === 0 && northFilterMode === 'all') return null;
+
+    let result = locations;
+
+    // Фильтр по регионам
+    if (selectedRegions.size > 0) {
+      result = result.filter(loc => selectedRegions.has(loc.region));
+    }
+
+    // Фильтр по северу
+    if (northFilterMode === 'onlyNorth') {
+      result = result.filter(loc => loc.is_north === true);
+    } else if (northFilterMode === 'excludeNorth') {
+      result = result.filter(loc => loc.is_north !== true);
+    }
+
+    return result;
+  }, [locations, selectedRegions, northFilterMode]);"""
+
+if pattern.search(content):
+    content = pattern.sub(new_filter, content)
+    print("✅ MapPage: filteredLocations обновлён")
+else:
+    print("❌ MapPage: filteredLocations не найден — проверь вручную")
+
+# 3.3 Пропсы в ControlPanel
+if 'northFilterMode={northFilterMode}' not in content:
+    content = content.replace(
+        "onCenterSelectedRegions={handleCenterSelectedRegions}\n      />",
+        "onCenterSelectedRegions={handleCenterSelectedRegions}\n"
+        "        northFilterMode={northFilterMode}\n"
+        "        onNorthFilterModeChange={setNorthFilterMode}\n"
+        "      />"
+    )
+    print("✅ MapPage: пропсы добавлены")
+
+with io.open(path, "w", encoding="utf-8") as f:
+    f.write(content)
+PYEOF
 
 # -----------------------------------------------------------------------------
-# 5. Обновляем Watermark/index.ts
+# 4. ControlPanel.tsx — типы, деструктуризация, тумблеры
 # -----------------------------------------------------------------------------
-cat > src/shared/ui/Watermark/index.ts << 'EOF'
-export { default } from './Watermark';
-export { Watermark } from './Watermark';
-EOF
+python3 << 'PYEOF'
+import io
+path = "src/widgets/ControlPanel/ui/ControlPanel.tsx"
+with io.open(path, encoding="utf-8") as f:
+    content = f.read()
 
-# -----------------------------------------------------------------------------
-# 6. Обновляем shared/ui/index.ts
-# -----------------------------------------------------------------------------
-cat > src/shared/ui/index.ts << 'EOF'
-export { SliderWithInput } from './SliderWithInput';
-export { CameraControls } from './CameraControls';
-export { PaletteLibrary } from './PaletteLibrary';
-export { GradientPicker } from './GradientPicker';
-export { RegionList } from './RegionList';
-export { Watermark } from './Watermark';
-export { default as Dashboard } from './Dashboard';
-export { SelectionToolbar } from './SelectionToolbar';
-export { SettlementSearch } from './SettlementSearch';
-EOF
+# 4.1 Типы пропсов
+if 'northFilterMode?:' not in content:
+    content = content.replace(
+        "onCenterSelectedRegions: () => void;\n}",
+        "onCenterSelectedRegions: () => void;\n"
+        "  northFilterMode?: 'all' | 'onlyNorth' | 'excludeNorth';\n"
+        "  onNorthFilterModeChange?: (mode: 'all' | 'onlyNorth' | 'excludeNorth') => void;\n}"
+    )
+    print("✅ ControlPanel: типы пропсов")
+
+# 4.2 Деструктуризация
+if 'northFilterMode =' not in content:
+    content = content.replace(
+        "regionsList, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions\n  } = props;",
+        "regionsList, selectedRegions, onRegionsSelectionChange, onCenterRegion, onCenterSelectedRegions,\n"
+        "    northFilterMode = 'all', onNorthFilterModeChange\n  } = props;"
+    )
+    print("✅ ControlPanel: деструктуризация")
+
+# 4.3 Тумблеры во вкладке «Регионы»
+if 'northFilterMode === ' not in content:
+    old_block = """          {activeTab === 6 && (
+            <Stack spacing={2}>
+              <RegionList"""
+    new_block = """          {activeTab === 6 && (
+            <Stack spacing={2}>
+              <Box sx={{ p: 1.5, bgcolor: '#f5f5f5', borderRadius: 1, mb: 1 }}>
+                <Typography variant="subtitle2" color="primary" gutterBottom>
+                  Фильтр по северному полигону
+                </Typography>
+                <FormControlLabel
+                  control={<Switch size="small" checked={northFilterMode === 'onlyNorth'}
+                    onChange={(e) => onNorthFilterModeChange?.(e.target.checked ? 'onlyNorth' : 'all')} />}
+                  label="Только север"
+                />
+                <FormControlLabel
+                  control={<Switch size="small" checked={northFilterMode === 'excludeNorth'}
+                    onChange={(e) => onNorthFilterModeChange?.(e.target.checked ? 'excludeNorth' : 'all')} />}
+                  label="Исключить север"
+                />
+              </Box>
+              <RegionList"""
+    if old_block in content:
+        content = content.replace(old_block, new_block)
+        print("✅ ControlPanel: тумблеры добавлены")
+    else:
+        print("❌ ControlPanel: блок вкладки «Регионы» не найден")
+
+with io.open(path, "w", encoding="utf-8") as f:
+    f.write(content)
+PYEOF
 
 echo ""
-echo "✅ ГОТОВО!"
+echo "✅ ГОТОВО"
 echo ""
-echo "📋 ЧТО СДЕЛАНО:"
-echo "   1. Шрифт Jost применён глобально ко всем элементам через CSS"
-echo "   2. Добавлены стили для Material UI компонентов"
-echo "   3. Добавлены стили для Recharts"
-echo "   4. Водяной знак добавлен в App.tsx над картой"
-echo "   5. Водяной знак выглядит точно как в старом коде:"
-echo "      - 'АНТОН ПАВЛОВ' жирным 30px"
-echo "      - 'tg-@anteotalks' обычным 26px"
-echo "      - Цвет rgba(128,128,128,0.5)"
-echo "      - Позиция bottom: 20px, left: 20px"
+echo "📋 Проверка:"
+echo "  grep -c northFilterMode src/pages/MapPage/ui/MapPage.tsx"
+echo "  grep -c northFilterMode src/widgets/ControlPanel/ui/ControlPanel.tsx"
+echo "  grep -c is_north src/entities/location/lib/types.ts"
+echo "  grep -c is_north src/entities/location/api/locationApi.ts"
 echo ""
-echo "🚀 Запускайте: pnpm dev"
+echo "🚀 Запускай: pnpm dev"
+echo "   Вкладка «Регионы» → блок «Фильтр по северному полигону»"
