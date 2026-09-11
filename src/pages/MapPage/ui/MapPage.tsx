@@ -67,6 +67,9 @@ const chunkArray = <T,>(array: T[], chunkSize: number): T[][] => {
   return chunks;
 };
 
+// Базовый путь к данным на GitHub Pages
+const DATA_BASE_PATH = '/russia-interactive-map.github.io/react-app/';
+
 export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -107,7 +110,7 @@ export const MapPage: React.FC = () => {
 
     const load = async () => {
       try {
-        const data = await fetchLocationsFromCSV(`${import.meta.env.BASE_URL}data_seva_updated1.csv`, signal);
+        const data = await fetchLocationsFromCSV(`${DATA_BASE_PATH}data_seva_updated1.csv`, signal);
         if (!ignore) {
           setLocations(data);
           setPopulationMax(getPopulationExtents(data)[1]);
@@ -137,7 +140,7 @@ export const MapPage: React.FC = () => {
 
     const load = async () => {
       try {
-        const data = await fetchRegionsFromGeoJSON(`${import.meta.env.BASE_URL}ruregs32.geojson`);
+        const data = await fetchRegionsFromGeoJSON(`${DATA_BASE_PATH}ruregs32.geojson`);
         if (isMounted) {
           setRegionsData(data);
         }
