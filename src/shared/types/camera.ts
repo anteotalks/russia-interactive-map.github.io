@@ -33,7 +33,7 @@ export const DEFAULT_CAMERA_SETTINGS: CameraSettings = {
 export const CAMERA_LIMITS = {
   longitude: { min: -180, max: 180, step: 0.1 },
   latitude: { min: -85, max: 85, step: 0.1 },
-  zoom: { min: 1, max: 20, step: 0.1 },
+  zoom: { min: 1, max: 20, step: 0.01 },
   pitch: { min: 0, max: 85, step: 1 },
   bearing: { min: -180, max: 180, step: 1 }
 } as const;
