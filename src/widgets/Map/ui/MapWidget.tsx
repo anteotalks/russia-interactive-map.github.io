@@ -173,7 +173,6 @@ export const MapWidget = forwardRef<MapRef, MapWidgetProps>(({
         <DeckGLOverlay
           layers={layers}
           getTooltip={getTooltip}
-          onClick={onClick}
           interleaved
         />
         {children}

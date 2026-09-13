@@ -67,7 +67,6 @@ const chunkArray = <T,>(array: T[], chunkSize: number): T[][] => {
   return chunks;
 };
 
-// Базовый путь к данным на GitHub Pages
 const DATA_BASE_PATH = './';
 
 export const MapPage: React.FC = () => {
@@ -238,19 +237,36 @@ export const MapPage: React.FC = () => {
     });
   }, [locations, selectedRegions, mapRef]);
 
-  const onDrawCreate = useCallback((evt: { features: object[] }) => {
-    if (isProcessingRef.current) return;
-    if (!locations || locations.length === 0 || !evt.features[0]) return;
+  // НОВОЕ: обработка выбора через Terra Draw
+  const handleSelection = useCallback(() => {
+    if (!locations || locations.length === 0) return;
+    const features = drawRef.current?.getFeatures() ?? [];
+    const polygons = features.filter((f: any) => f.geometry?.type === 'Polygon');
+    if (polygons.length === 0) return;
 
-    const feature = evt.features[0] as any;
+    const feature = polygons[0] as any;
+
+    // Применяем те же фильтры, что и для отображения точек
+    let source = locations;
+    if (selectedRegions.size > 0) {
+      source = source.filter(loc => selectedRegions.has(loc.region));
+    }
+    if (northFilter === 'north') {
+      source = source.filter(loc => loc.is_north === 1);
+    } else if (northFilter === 'south') {
+      source = source.filter(loc => loc.is_north === 0);
+    }
+
+    if (source.length === 0) return;
+
     isProcessingRef.current = true;
 
     try {
       const CHUNK_SIZE = 500;
-      const chunks = chunkArray(locations, CHUNK_SIZE);
-      
+      const chunks = chunkArray(source, CHUNK_SIZE);
+
       let allPointsInPolygon: Location[] = [];
-      
+
       for (const chunk of chunks) {
         const pointsInChunk = chunk.filter(loc => {
           const point = turf.point([loc.longitude, loc.latitude]);
@@ -271,20 +287,22 @@ export const MapPage: React.FC = () => {
     } finally {
       isProcessingRef.current = false;
     }
-  }, [locations]);
+  }, [locations, selectedRegions, northFilter]);
 
-  const onDrawUpdate = useCallback((evt: { features: object[]; action: string }) => {
-    console.log('Polygon updated:', evt.action);
-  }, []);
+  // НОВОЕ: подписка на событие finish из Terra Draw
+  useEffect(() => {
+    const td = drawRef.current?.getTerraDrawInstance();
+    if (!td) return;
 
-  const onDrawDelete = useCallback(() => {
-    setDashboardOpen(false);
-    setDashboardData(null);
-  }, []);
+    const handleFinish = () => {
+      handleSelection();
+    };
 
-  const onDrawModeChange = useCallback((mode: string) => {
-    console.log('Draw mode changed:', mode);
-  }, []);
+    td.on('finish', handleFinish);
+    return () => {
+      td.off('finish', handleFinish);
+    };
+  }, [handleSelection]);
 
   const stableLocations = useMemo(() => locations, [locations]);
   
@@ -295,10 +313,11 @@ export const MapPage: React.FC = () => {
 
   const filteredLocations = useMemo(() => {
     if (!locations) return null;
-    let filtered = locations;
-    if (selectedRegions.size > 0) {
-      filtered = filtered.filter(loc => selectedRegions.has(loc.region));
+    // Если регионы не выбраны — не показываем ничего
+    if (selectedRegions.size === 0) {
+      return [];
     }
+    let filtered = locations.filter(loc => selectedRegions.has(loc.region));
     if (northFilter === 'north') {
       filtered = filtered.filter(loc => loc.is_north === 1);
     } else if (northFilter === 'south') {
@@ -439,22 +458,12 @@ export const MapPage: React.FC = () => {
         terrainMode={terrainMode}
         layers={allLayers}
         getTooltip={getTooltip}
-        onClick={handleMapClick}
         viewState={viewState}
         onViewStateChange={handleMapViewStateChange}
       >
         <DrawControl
           ref={drawRef}
           position="top-left"
-          displayControlsDefault={false}
-          controls={{
-            polygon: true,
-            trash: true,
-          }}
-          onCreate={onDrawCreate}
-          onUpdate={onDrawUpdate}
-          onDelete={onDrawDelete}
-          onModeChange={onDrawModeChange}
         />
       </MapWidget>
       

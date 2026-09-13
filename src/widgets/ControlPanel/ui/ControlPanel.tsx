@@ -389,8 +389,8 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = (props) => {
           {activeTab === 4 && (
             <Stack spacing={2}>
               <Typography variant="subtitle2" color="primary">Фильтр по населению</Typography>
-              <SliderWithInput label="Минимум" value={filterSettings.populationMin} onChange={(val) => onFilterChange({ populationMin: val })} min={0} max={populationMax} step={Math.ceil(populationMax / 100)} unit="чел." />
-              <SliderWithInput label="Максимум" value={filterSettings.populationMax} onChange={(val) => onFilterChange({ populationMax: val })} min={0} max={populationMax} step={Math.ceil(populationMax / 100)} unit="чел." />
+              <SliderWithInput label="Минимум" value={filterSettings.populationMin} onChange={(val) => onFilterChange({ populationMin: val })} min={0} max={populationMax} step={1} unit="чел." />
+              <SliderWithInput label="Максимум" value={filterSettings.populationMax} onChange={(val) => onFilterChange({ populationMax: val })} min={0} max={populationMax} step={1} unit="чел." />
               <FormControlLabel control={<Switch size="small" checked={filterSettings.showZeroPopulation} onChange={(e) => onFilterChange({ showZeroPopulation: e.target.checked })} />} label="Показывать н.п. с нулевым населением" />
               <Divider sx={{ my: 1 }} />
               <Typography variant="subtitle2" color="primary">Фильтр по динамике (%)</Typography>
