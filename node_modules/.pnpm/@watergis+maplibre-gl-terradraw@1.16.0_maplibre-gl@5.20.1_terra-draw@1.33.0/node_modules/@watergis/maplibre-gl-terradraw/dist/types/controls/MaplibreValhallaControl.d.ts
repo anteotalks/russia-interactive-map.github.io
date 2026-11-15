@@ -1,0 +1,52 @@
+import { MaplibreTerradrawControl } from './MaplibreTerradrawControl';
+import type { TerradrawMode, TerradrawValhallaMode, ValhallaControlOptions } from '../interfaces';
+import { type Map, type StyleSpecification } from 'maplibre-gl';
+import { ModalDialog, type routingDistanceUnitType, type costingModelType, type Contour } from '../helpers';
+export declare class MaplibreValhallaControl extends MaplibreTerradrawControl {
+    private controlOptions;
+    private _modalDialog;
+    private get routingMode();
+    private get timeIsochroneMode();
+    private get distanceIsochroneMode();
+    get valhallaUrl(): string;
+    set valhallaUrl(value: string);
+    get routingCostingModel(): costingModelType;
+    set routingCostingModel(value: costingModelType);
+    get routingDistanceUnit(): routingDistanceUnitType;
+    set routingDistanceUnit(value: routingDistanceUnitType);
+    get timeIsochroneCostingModel(): costingModelType;
+    set timeIsochroneCostingModel(value: costingModelType);
+    get distanceIsochroneCostingModel(): costingModelType;
+    set distanceIsochroneCostingModel(value: costingModelType);
+    get isochroneContours(): Contour[];
+    set isochroneContours(value: Contour[]);
+    get fontGlyphs(): string[];
+    set fontGlyphs(fontNames: string[]);
+    get settingDialog(): ModalDialog;
+    set settingDialog(value: ModalDialog);
+    constructor(options?: ValhallaControlOptions);
+    private validateModeUrls;
+    onAdd(map: Map): HTMLElement;
+    onRemove(): void;
+    activate(): void;
+    cleanStyle(style: StyleSpecification, options?: {
+        excludeTerraDrawLayers?: boolean;
+        onlyTerraDrawLayers?: boolean;
+    }): StyleSpecification;
+    private createSettingsDialog;
+    private switchTab;
+    private createRoutingContent;
+    private createIsochroneContent;
+    private createContoursTable;
+    private createContourRow;
+    private updateAddRowButtonState;
+    protected addTerradrawButton(mode: TerradrawMode): void;
+    private handleSettingDialog;
+    protected setValhallaMode(mode: TerradrawValhallaMode): void;
+    private registerValhallaControl;
+    private unregisterValhallaControl;
+    private handleStoreChange;
+    private setLabelSourceData;
+    protected handleDeleteSelectedFeatures(): void;
+}
+//# sourceMappingURL=MaplibreValhallaControl.d.ts.map

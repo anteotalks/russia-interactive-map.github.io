@@ -1,0 +1,1 @@
+{"version":3,"file":"TerradrawMode.d.ts","sourceRoot":"","sources":["../../../src/lib/interfaces/TerradrawMode.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,cAAc,EAAE,sBAAsB,EAAE,MAAM,6BAA6B,CAAC;AASrF,MAAM,MAAM,aAAa,GAAG,CAAC,OAAO,cAAc,CAAC,CAAC,MAAM,CAAC,GAAG,SAAS,CAAC;AASxE,MAAM,MAAM,qBAAqB,GAAG,CAAC,OAAO,sBAAsB,CAAC,CAAC,MAAM,CAAC,GAAG,SAAS,CAAC"}
