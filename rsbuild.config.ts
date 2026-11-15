@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv, type RsbuildPlugin } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
 import tailwind from "@tailwindcss/postcss";
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -15,22 +15,51 @@ const { publicVars } = loadEnv({ cwd: "./environments" });
 const siteLayoutPlugin: RsbuildPlugin = {
   name: "site-layout",
   setup(api) {
-    api.onAfterBuild(() => {
-      // корень сборки = context.distPath (output.distPath.root = 'react-app')
-      // Новая версия (deck.gl) остаётся в <root>/ (react-app/index.html + static/).
-      // Селектор кладём в <root>/react-app/index.html — чтобы ./react-app/ открывала выбор.
+    api.onBeforeBuild(() => {
+      // Очищаем react-app/ перед сборкой
       const distPath = api.context.distPath;
-      // 1) Селектор -> <root>/react-app/index.html
+      if (existsSync(distPath)) {
+        rmSync(distPath, { recursive: true, force: true });
+        console.log("[site-layout] cleaned react-app/");
+      }
+    });
+    api.onAfterBuild(() => {
+      // Структура сайта:
+      //   /           = селектор (выбор версии)
+      //   /react-app/ = новая версия (deck.gl)
+      //   /old/       = старая версия (Plotly)
+      const distPath = api.context.distPath;
+      
+      // 1) App (deck.gl) -> <root>/react-app/
+      // rsbuild собрал app в <root>/, переносим в <root>/react-app/
       try {
-        const selDir = join(distPath, "react-app");
-        if (!existsSync(selDir)) mkdirSync(selDir, { recursive: true });
+        const appDir = join(distPath, "react-app");
+        if (!existsSync(appDir)) mkdirSync(appDir, { recursive: true });
+        // Переносим index.html и static/ в react-app/
+        for (const item of ["index.html", "static"]) {
+          const src = join(distPath, item);
+          const dst = join(appDir, item);
+          if (existsSync(src)) {
+            cpSync(src, dst, { recursive: true });
+            if (item === "index.html") rmSync(src);
+            else rmSync(src, { recursive: true });
+          }
+        }
+        console.log("[site-layout] app -> react-app/");
+      } catch (e) {
+        console.warn("[site-layout] app move failed:", e);
+      }
+      
+      // 2) Селектор -> корень (<root>/index.html)
+      try {
         const selector = readFileSync(join(__dirname, "index.html"), "utf8");
-        writeFileSync(join(selDir, "index.html"), selector, "utf8");
-        console.log("[site-layout] selector -> react-app/");
+        writeFileSync(join(distPath, "index.html"), selector, "utf8");
+        console.log("[site-layout] selector -> root");
       } catch (e) {
         console.warn("[site-layout] selector copy failed:", e);
       }
-      // 2) Старая (plotly) версия -> <root>/old/ (кроме data.js — сгенерим ниже)
+      
+      // 3) Старая (plotly) версия -> <root>/old/
       try {
         const srcOld = join(__dirname, "old");
         const dstOld = join(distPath, "old");
@@ -40,12 +69,13 @@ const siteLayoutPlugin: RsbuildPlugin = {
             const sp = join(srcOld, f);
             if (existsSync(sp)) cpSync(sp, join(dstOld, f));
           }
-          console.log("[site-layout] old/ -> build (без data.js)");
+          console.log("[site-layout] old/ -> build");
         }
       } catch (e) {
         console.warn("[site-layout] old/ copy failed:", e);
       }
-      // 3) Генерация data.js -> react-app/old/data.js (не в git)
+      
+      // 4) Генерация data.js -> <root>/old/data.js
       try {
         const r = spawnSync(
           process.execPath,
