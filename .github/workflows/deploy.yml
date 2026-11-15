@@ -23,6 +23,8 @@ jobs:
       - run: npm i -g pnpm
       - run: pnpm install
       - run: pnpm build
+      - name: Check dist exists
+        run: ls -la dist || echo "=== DIST NOT FOUND ==="
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
