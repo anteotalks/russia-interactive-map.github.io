@@ -6,6 +6,8 @@
 # Dist
 node_modules
 dist/
+react-app/
+old/data.js
 
 # IDE
 .vscode/*
