@@ -13,4 +13,12 @@ dist/
 !.vscode/settings.json
 .idea
 
-.env.*.localm*.md
+.env.*.local
+m*.md
+repomix-output.xml
+*.bak
+*.bak_*
+*.backup_*
+*.trapar-backup
+*.~lock*
+.~lock*
