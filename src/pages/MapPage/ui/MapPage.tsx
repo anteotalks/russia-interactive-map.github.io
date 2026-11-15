@@ -72,6 +72,7 @@ const DATA_BASE_PATH = './';
 export const MapPage: React.FC = () => {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState<string>('');
   const [settings, setSettings] = useState<VisualizationSettings>(defaultSettings);
   const [mode, setMode] = useState<VisualizationMode>('dynamics');
   const [dynamicsMode, setDynamicsMode] = useState<'2010-2021' | '2002-2021'>('2010-2021');
@@ -110,8 +111,10 @@ export const MapPage: React.FC = () => {
 
     const load = async () => {
       try {
+        setLoadingProgress('Загрузка данных о населённых пунктах...');
         const data = await fetchLocationsFromCSV(`${DATA_BASE_PATH}data_seva_updated1.csv`, signal);
         if (!ignore) {
+          setLoadingProgress('Загрузка границ регионов...');
           setLocations(data);
           setPopulationMax(getPopulationExtents(data)[1]);
           const dynExt = getDynamicsExtents(data);
@@ -127,6 +130,7 @@ export const MapPage: React.FC = () => {
         activeRequests.current -= 1;
         if (activeRequests.current === 0) {
           setIsLoading(false);
+          setLoadingProgress('');
         }
       }
     };
@@ -140,6 +144,7 @@ export const MapPage: React.FC = () => {
 
     const load = async () => {
       try {
+        setLoadingProgress('Загрузка границ регионов...');
         const data = await fetchRegionsFromGeoJSON(`${DATA_BASE_PATH}ruregs32.geojson`);
         if (isMounted) {
           setRegionsData(data);
@@ -391,7 +396,7 @@ export const MapPage: React.FC = () => {
         zIndex: 2000,
         fontFamily: 'sans-serif'
       }}>
-        <div>Загрузка данных...</div>
+        <div>{loadingProgress || 'Загрузка данных...'}</div>
         <div style={{ marginTop: '1rem', color: '#666', fontSize: '0.9rem' }}>
           Если загрузка затянулась, проверьте консоль (F12) на наличие ошибок.
         </div>
