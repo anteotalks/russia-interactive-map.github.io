@@ -3,95 +3,380 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Russia Interactive Map — выбор версии</title>
+    <title>Интерактивная карта населённых пунктов России</title>
+    <meta name="description" content="Интерактивная карта всех населённых пунктов России с данными по переписям 2002, 2010 и 2021 годов">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Jost:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body { height: 100%; }
+
         body {
             font-family: 'Jost', 'Segoe UI', -apple-system, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: #0a0e1a;
+            color: #fff;
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
+            overflow-x: hidden;
+            position: relative;
+            -webkit-font-smoothing: antialiased;
         }
-        .container {
-            text-align: center;
-            padding: 40px 20px;
-            max-width: 720px;
-            width: 100%;
+
+        /* ===================== ФОНОВЫЕ ОРБЫ (LIQUID GLOW) ===================== */
+        .bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            background:
+                radial-gradient(ellipse 80% 60% at 20% -10%, rgba(30, 58, 138, 0.55), transparent 60%),
+                radial-gradient(ellipse 70% 50% at 85% 110%, rgba(88, 28, 135, 0.5), transparent 60%),
+                radial-gradient(ellipse 60% 50% at 50% 50%, rgba(10, 14, 26, 0.3), transparent 70%),
+                #0a0e1a;
         }
-        h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            font-weight: 700;
-            letter-spacing: 1px;
+
+        .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(90px);
+            opacity: 0.55;
+            will-change: transform;
         }
-        .subtitle {
-            color: rgba(255,255,255,0.55);
-            margin-bottom: 48px;
-            font-size: 1.1rem;
-            font-weight: 400;
+        .orb-1 {
+            width: 55vw; height: 55vw;
+            left: -12vw; top: -18vw;
+            background: radial-gradient(circle at 30% 30%, #3b82f6, #1e3a8a 55%, transparent 75%);
+            animation: drift1 26s ease-in-out infinite alternate;
         }
-        .cards {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 24px;
+        .orb-2 {
+            width: 48vw; height: 48vw;
+            right: -14vw; bottom: -16vw;
+            background: radial-gradient(circle at 60% 40%, #8b5cf6, #4c1d95 55%, transparent 75%);
+            animation: drift2 32s ease-in-out infinite alternate;
         }
-        @media (max-width: 600px) {
-            .cards { grid-template-columns: 1fr; }
-            h1 { font-size: 1.8rem; }
-            .subtitle { font-size: 0.95rem; margin-bottom: 32px; }
+        .orb-3 {
+            width: 34vw; height: 34vw;
+            right: 18vw; top: 6vh;
+            background: radial-gradient(circle at 50% 50%, #06b6d4, #155e75 60%, transparent 78%);
+            opacity: 0.4;
+            animation: drift3 22s ease-in-out infinite alternate;
         }
-        .card {
-            background: rgba(255,255,255,0.07);
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 16px;
-            padding: 36px 24px;
-            text-decoration: none;
-            color: #fff;
-            transition: all 0.25s ease;
+        .orb-4 {
+            width: 30vw; height: 30vw;
+            left: 22vw; bottom: 4vh;
+            background: radial-gradient(circle at 50% 50%, #f59e0b, #92400e 60%, transparent 78%);
+            opacity: 0.28;
+            animation: drift1 38s ease-in-out infinite alternate-reverse;
+        }
+
+        @keyframes drift1 {
+            0%   { transform: translate(0, 0) scale(1); }
+            50%  { transform: translate(6vw, 4vh) scale(1.12); }
+            100% { transform: translate(-3vw, 8vh) scale(0.95); }
+        }
+        @keyframes drift2 {
+            0%   { transform: translate(0, 0) scale(1); }
+            50%  { transform: translate(-5vw, -6vh) scale(1.08); }
+            100% { transform: translate(4vw, -2vh) scale(0.92); }
+        }
+        @keyframes drift3 {
+            0%   { transform: translate(0, 0) scale(1) rotate(0deg); }
+            100% { transform: translate(-8vw, 6vh) scale(1.15) rotate(40deg); }
+        }
+
+        /* Зерно поверх фона для мягкости */
+        .grain {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            opacity: 0.05;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+        }
+
+        /* ===================== КОНТЕНТ ===================== */
+        .page {
+            position: relative;
+            z-index: 2;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 10px;
-            cursor: pointer;
+            justify-content: center;
+            padding: 48px 20px;
         }
-        .card:hover {
-            background: rgba(255,255,255,0.13);
-            transform: translateY(-4px);
-            box-shadow: 0 12px 32px rgba(0,0,0,0.45);
-            border-color: rgba(255,255,255,0.25);
+
+        /* ---------- Glass surface — базовый liquid-glass приём ---------- */
+        .glass {
+            background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03));
+            border: 1px solid rgba(255,255,255,0.16);
+            border-radius: 28px;
+            backdrop-filter: blur(28px) saturate(160%);
+            -webkit-backdrop-filter: blur(28px) saturate(160%);
+            box-shadow:
+                0 24px 60px rgba(0, 0, 0, 0.45),
+                inset 0 1px 0 rgba(255, 255, 255, 0.22),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.06);
         }
-        .card .icon { font-size: 2.8rem; margin-bottom: 4px; }
-        .card .title { font-size: 1.3rem; font-weight: 600; }
-        .card .desc { font-size: 0.85rem; color: rgba(255,255,255,0.45); line-height: 1.45; }
-        .card.old { border-left: 4px solid #f39c12; }
-        .card.new { border-left: 4px solid #3498db; }
+
+        /* ---------- Header ---------- */
+        .hero {
+            text-align: center;
+            margin-bottom: 52px;
+        }
+
+        h1 {
+            font-size: clamp(2.4rem, 6vw, 4.2rem);
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            line-height: 1.08;
+            background: linear-gradient(120deg, #ffffff 20%, #93c5fd 45%, #c4b5fd 70%, #ffffff 95%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: fadeUp 0.8s 0.15s ease both, shimmer 7s 1s linear infinite;
+        }
+        @keyframes shimmer {
+            to { background-position: 200% center; }
+        }
+
+        .subtitle {
+            margin: 18px auto 0;
+            font-size: clamp(0.98rem, 2vw, 1.15rem);
+            font-weight: 400;
+            color: rgba(255,255,255,0.55);
+            max-width: 1200px;
+            line-height: 1.6;
+            animation: fadeUp 0.8s 0.28s ease both;
+        }
+
+        /* ---------- Карточки ---------- */
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 26px;
+            width: 100%;
+            max-width: 880px;
+        }
+        @media (max-width: 640px) {
+            .cards { grid-template-columns: 1fr; }
+            .hero { margin-bottom: 36px; }
+        }
+
+        .card {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            padding: 44px 30px 40px;
+            text-decoration: none;
+            color: #fff;
+            border-radius: 28px;
+            overflow: hidden;
+            transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+                        box-shadow 0.35s ease,
+                        border-color 0.35s ease;
+            animation: fadeUp 0.9s ease both;
+        }
+        .card:nth-child(1) { animation-delay: 0.38s; }
+        .card:nth-child(2) { animation-delay: 0.5s; }
+
+        /* цветная подсветка внутри карточки (похожее на подсветку фона под blur) */
+        .card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            border-radius: inherit;
+        }
+        .card:hover::before,
+        .card:focus-visible::before { opacity: 1; }
+        .card.old::before {
+            background:
+                radial-gradient(60% 80% at 20% 0%, rgba(243, 156, 18, 0.30), transparent 70%),
+                linear-gradient(135deg, rgba(243, 156, 18, 0.10), rgba(243, 156, 18, 0.02));
+        }
+        .card.new::before {
+            background:
+                radial-gradient(60% 80% at 80% 0%, rgba(56, 189, 248, 0.30), transparent 70%),
+                linear-gradient(135deg, rgba(56, 189, 248, 0.10), rgba(129, 140, 248, 0.04));
+        }
+
+        .card:hover, .card:focus-visible {
+            transform: translateY(-6px) scale(1.012);
+            border-color: rgba(255,255,255,0.32);
+            box-shadow:
+                0 32px 80px rgba(0, 0, 0, 0.55),
+                inset 0 1px 0 rgba(255, 255, 255, 0.35),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+            outline: none;
+        }
+
+        /* блик, бегущий по карточке при наведении */
+        .card::after {
+            content: '';
+            position: absolute;
+            top: 0; left: -80%;
+            width: 55%;
+            height: 100%;
+            background: linear-gradient(100deg, transparent, rgba(255,255,255,0.14), transparent);
+            transform: skewX(-18deg);
+            transition: left 0.7s ease;
+            pointer-events: none;
+        }
+        .card:hover::after { left: 130%; }
+
+        .card .icon {
+            font-size: 3rem;
+            line-height: 1;
+            filter: drop-shadow(0 8px 24px rgba(0,0,0,0.4));
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .card:hover .icon { transform: scale(1.12) rotate(-4deg); }
+
+        .card .title {
+            font-size: 1.45rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+        }
+        .card .desc {
+            font-size: 0.88rem;
+            color: rgba(255,255,255,0.5);
+            line-height: 1.55;
+            max-width: 320px;
+        }
+
+        .card .go {
+            margin-top: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.92rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: rgba(255,255,255,0.85);
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .card .go svg { transition: transform 0.3s ease; }
+        .card:hover .go, .card:focus-visible .go { opacity: 1; transform: translateY(0); }
+        .card:hover .go svg { transform: translateX(4px); }
+
+        /* ---------- Footer ---------- */
         .footer {
-            margin-top: 48px;
-            font-size: 0.8rem;
-            color: rgba(255,255,255,0.25);
+            margin-top: 56px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 18px;
+            animation: fadeUp 0.9s 0.66s ease both;
+        }
+
+        .authors {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .author {
+            display: inline-flex;
+            align-items: center;
+            white-space: nowrap;
+            padding: 12px 22px;
+            border-radius: 14px;
+            text-decoration: none;
+            color: rgba(255,255,255,0.85);
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.12);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            transition: all 0.3s ease;
+        }
+        .author:hover {
+            background: rgba(255,255,255,0.10);
+            border-color: rgba(255,255,255,0.28);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+        }
+        .author .role {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: rgba(255,255,255,0.85);
+        }
+        .author .name {
+            margin-left: 8px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: rgba(255,255,255,0.85);
+        }
+        .author .url {
+            margin-left: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #7dd3fc;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(22px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .orb, h1 { animation: none !important; }
+            .card, .hero *, .footer { animation-duration: 0.01s !important; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Russia Interactive Map</h1>
-        <p class="subtitle">Выберите версию визуализации</p>
+    <div class="bg" aria-hidden="true">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+        <div class="orb orb-4"></div>
+    </div>
+    <div class="grain" aria-hidden="true"></div>
+
+    <main class="page">
+        <header class="hero">
+            <h1>Интерактивная карта всех населённых пунктов России</h1>
+            <p class="subtitle">Данные по населению по переписям 2002, 2010 и 2021 годов. Выберите версию визуализации.</p>
+        </header>
+
         <div class="cards">
-            <a href="old/" class="card old">
+            <a href="old/" class="card glass old">
                 <span class="icon">🗺️</span>
                 <span class="title">Старая версия</span>
-                <span class="desc">Plotly · Классическая карта<br>населённых пунктов России</span>
+                <span class="desc">Plotly</span>
+                <span class="go">Открыть карту
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                </span>
             </a>
-            <a href="react-app/" class="card new">
+
+            <a href="react-app/" class="card glass new">
                 <span class="icon">🚀</span>
                 <span class="title">Новая версия</span>
-                <span class="desc">Deck.gl + TypeScript<br>Интерактивная 3D-визуализация</span>
+                <span class="desc">TypeScript с deck.gl</span>
+                <span class="go">Открыть карту
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                </span>
             </a>
         </div>
-        <p class="footer">Антон Павлов · tg-@anteotalks</p>
-    </div>
+
+        <footer class="footer">
+            <a class="author" href="https://t.me/anteotalks" target="_blank" rel="noopener">
+                <span class="role">Автор карты:</span> <span class="name">Антон Павлов</span> <span class="url">t.me/anteotalks</span>
+            </a>
+            <a class="author" href="https://sevabashirov.livejournal.com" target="_blank" rel="noopener">
+                <span class="role">Сбор данных:</span> <span class="name">Всеволод Баширов</span> <span class="url">sevabashirov.livejournal.com</span>
+            </a>
+        </footer>
+    </main>
 </body>
 </html>
